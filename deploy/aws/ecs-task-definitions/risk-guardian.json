@@ -1,0 +1,70 @@
+{
+    "family": "polymarket-risk-guardian",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "512",
+    "memory": "1024",
+    "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/polymarket-ecs-execution-role",
+    "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/polymarket-risk-task-role",
+    "containerDefinitions": [
+        {
+            "name": "risk-guardian",
+            "image": "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/polymarket-risk:latest",
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 3002,
+                    "protocol": "tcp"
+                }
+            ],
+            "environment": [
+                {
+                    "name": "NODE_ENV",
+                    "value": "production"
+                },
+                {
+                    "name": "MODE",
+                    "value": "live"
+                },
+                {
+                    "name": "SERVICE_NAME",
+                    "value": "risk-guardian-service"
+                },
+                {
+                    "name": "LOG_LEVEL",
+                    "value": "info"
+                }
+            ],
+            "secrets": [
+                {
+                    "name": "DATABASE_URL",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:polymarket/database-url"
+                },
+                {
+                    "name": "SERVICE_JWT_SECRET",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:polymarket/jwt-secret"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/polymarket-risk-guardian",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "risk"
+                }
+            },
+            "healthCheck": {
+                "command": [
+                    "CMD-SHELL",
+                    "wget -q -O /dev/null http://localhost:3002/health || exit 1"
+                ],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 30
+            }
+        }
+    ]
+}

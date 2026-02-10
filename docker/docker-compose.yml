@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # ── PostgreSQL ──
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: polymarket
+      POSTGRES_USER: polymarket
+      POSTGRES_PASSWORD: polymarket_dev_password
+    ports:
+      - '5432:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U polymarket']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ── OpenClaw Agent Service ──
+  agent-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+    ports:
+      - '3001:3001'
+    environment:
+      NODE_ENV: development
+      MODE: simulation
+      SERVICE_NAME: openclaw-agent-service
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://polymarket:polymarket_dev_password@postgres:5432/polymarket
+      SERVICE_JWT_SECRET: dev-jwt-secret-must-be-at-least-32-characters-long
+      RISK_GUARDIAN_URL: http://risk-guardian:3002
+      TRADE_EXECUTOR_URL: http://trade-executor:3003
+      LLM_MODEL: gpt-4-turbo-preview
+      # OPENAI_API_KEY: set via .env file
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Risk Guardian Service ──
+  risk-guardian:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.risk
+    ports:
+      - '3002:3002'
+    environment:
+      NODE_ENV: development
+      MODE: simulation
+      SERVICE_NAME: risk-guardian-service
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://polymarket:polymarket_dev_password@postgres:5432/polymarket
+      SERVICE_JWT_SECRET: dev-jwt-secret-must-be-at-least-32-characters-long
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Trade Executor Service ──
+  trade-executor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.executor
+    ports:
+      - '3003:3003'
+    environment:
+      NODE_ENV: development
+      MODE: simulation
+      SERVICE_NAME: trade-executor-service
+      LOG_LEVEL: info
+      DATABASE_URL: postgresql://polymarket:polymarket_dev_password@postgres:5432/polymarket
+      SERVICE_JWT_SECRET: dev-jwt-secret-must-be-at-least-32-characters-long
+      POLYGON_RPC_URL: https://polygon-rpc.com
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:

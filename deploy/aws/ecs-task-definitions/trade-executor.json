@@ -1,0 +1,94 @@
+{
+    "family": "polymarket-trade-executor",
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": [
+        "FARGATE"
+    ],
+    "cpu": "512",
+    "memory": "1024",
+    "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/polymarket-ecs-execution-role",
+    "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/polymarket-executor-task-role",
+    "containerDefinitions": [
+        {
+            "name": "trade-executor",
+            "image": "ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/polymarket-executor:latest",
+            "essential": true,
+            "portMappings": [
+                {
+                    "containerPort": 3003,
+                    "protocol": "tcp"
+                }
+            ],
+            "environment": [
+                {
+                    "name": "NODE_ENV",
+                    "value": "production"
+                },
+                {
+                    "name": "MODE",
+                    "value": "live"
+                },
+                {
+                    "name": "SERVICE_NAME",
+                    "value": "trade-executor-service"
+                },
+                {
+                    "name": "LOG_LEVEL",
+                    "value": "info"
+                },
+                {
+                    "name": "AWS_REGION",
+                    "value": "us-east-1"
+                },
+                {
+                    "name": "POLYGON_RPC_URL",
+                    "value": "https://polygon-rpc.com"
+                }
+            ],
+            "secrets": [
+                {
+                    "name": "DATABASE_URL",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:polymarket/database-url"
+                },
+                {
+                    "name": "SERVICE_JWT_SECRET",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:polymarket/jwt-secret"
+                },
+                {
+                    "name": "WALLET_SECRET_ARN",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:polymarket/wallet-key"
+                },
+                {
+                    "name": "POLYMARKET_API_KEY",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:polymarket/api-key"
+                },
+                {
+                    "name": "POLYMARKET_API_SECRET",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:polymarket/api-secret"
+                },
+                {
+                    "name": "POLYMARKET_API_PASSPHRASE",
+                    "valueFrom": "arn:aws:secretsmanager:us-east-1:ACCOUNT_ID:secret:polymarket/api-passphrase"
+                }
+            ],
+            "logConfiguration": {
+                "logDriver": "awslogs",
+                "options": {
+                    "awslogs-group": "/ecs/polymarket-trade-executor",
+                    "awslogs-region": "us-east-1",
+                    "awslogs-stream-prefix": "executor"
+                }
+            },
+            "healthCheck": {
+                "command": [
+                    "CMD-SHELL",
+                    "wget -q -O /dev/null http://localhost:3003/health || exit 1"
+                ],
+                "interval": 30,
+                "timeout": 5,
+                "retries": 3,
+                "startPeriod": 30
+            }
+        }
+    ]
+}

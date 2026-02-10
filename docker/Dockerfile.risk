@@ -1,0 +1,22 @@
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY package.json tsconfig.base.json ./
+COPY shared-lib ./shared-lib
+COPY risk-guardian-service ./risk-guardian-service
+RUN npm install --workspace=shared-lib --workspace=risk-guardian-service
+RUN npm run build --workspace=shared-lib
+RUN npm run build --workspace=risk-guardian-service
+
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/shared-lib/dist ./shared-lib/dist
+COPY --from=builder /app/shared-lib/package.json ./shared-lib/package.json
+COPY --from=builder /app/shared-lib/prisma ./shared-lib/prisma
+COPY --from=builder /app/risk-guardian-service/dist ./risk-guardian-service/dist
+COPY --from=builder /app/risk-guardian-service/package.json ./risk-guardian-service/package.json
+RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001 -G appgroup
+USER appuser
+EXPOSE 3002
+CMD ["node", "risk-guardian-service/dist/index.js"]

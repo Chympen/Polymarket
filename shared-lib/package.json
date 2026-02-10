@@ -1,0 +1,23 @@
+{
+    "name": "shared-lib",
+    "version": "1.0.0",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc",
+        "generate": "prisma generate",
+        "migrate": "prisma migrate deploy",
+        "migrate:dev": "prisma migrate dev"
+    },
+    "dependencies": {
+        "@prisma/client": "^5.10.0",
+        "jsonwebtoken": "^9.0.2",
+        "pino": "^8.19.0",
+        "zod": "^3.22.0"
+    },
+    "devDependencies": {
+        "prisma": "^5.10.0",
+        "@types/jsonwebtoken": "^9.0.6",
+        "typescript": "^5.4.0"
+    }
+}
