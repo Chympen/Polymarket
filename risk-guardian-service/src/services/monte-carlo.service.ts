@@ -117,8 +117,8 @@ export class MonteCarloService {
         });
 
         return metrics
-            .filter((m) => m.portfolioValue > 0)
-            .map((m) => m.dailyPnl / m.portfolioValue);
+            .filter((m: { portfolioValue: number }) => m.portfolioValue > 0)
+            .map((m: { dailyPnl: number; portfolioValue: number }) => m.dailyPnl / m.portfolioValue);
     }
 
     /**

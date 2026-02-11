@@ -7,7 +7,6 @@ import {
     PortfolioState,
     TradeSignal,
     StrategyPerformance,
-    PricePoint,
 } from 'shared-lib';
 
 /**
@@ -269,7 +268,7 @@ export class SimulationEngine {
             take: 100,
         });
 
-        return markets.map((m) => ({
+        return markets.map((m: { conditionId: string; questionId: string; question: string; priceYes: number; priceNo: number; volume24h: number; liquidity: number; endDate: Date | null }) => ({
             conditionId: m.conditionId,
             questionId: m.questionId,
             question: m.question,

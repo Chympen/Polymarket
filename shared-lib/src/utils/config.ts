@@ -47,6 +47,7 @@ export function loadConfig(): AppConfig {
     const result = envSchema.safeParse(process.env);
 
     if (!result.success) {
+        console.error('Environment validation failed. DATABASE_URL:', process.env.DATABASE_URL);
         const errors = result.error.errors
             .map((e) => `  ${e.path.join('.')}: ${e.message}`)
             .join('\n');

@@ -12,6 +12,7 @@ import {
     disconnectDatabase,
     generateServiceToken,
     serviceAuthMiddleware,
+    logActivity,
     SERVICE_PORTS,
     POLYMARKET,
     MarketSnapshot,
@@ -29,25 +30,36 @@ import { SentimentAgent } from './agents/sentiment.agent';
 import { PortfolioOptimizationAgent } from './agents/portfolio-optimization.agent';
 import { MetaAllocatorAgent } from './agents/meta-allocator.agent';
 import { BaseAgent } from './agents/base.agent';
-import { DecisionEngine } from './engine/decision-engine';
+// import { DecisionEngine } from './engine/decision-engine';
 import { SimulationEngine } from './simulation/simulation-engine';
 import { PerformanceTracker } from './analytics/performance-tracker';
 
 const log = logger.child({ module: 'AgentServiceMain' });
 
-// ── Initialize all agents ──
-const agents: BaseAgent[] = [
-    new ArbitrageAgent(),
-    new MomentumAgent(),
-    new MeanReversionAgent(),
-    new SentimentAgent(),
-    new PortfolioOptimizationAgent(),
-];
+// ── Service State (Initialized in main) ──
+let agents: BaseAgent[] = [];
+let metaAllocator: MetaAllocatorAgent;
+let simulationEngine: SimulationEngine;
+let performanceTracker: PerformanceTracker;
 
-const metaAllocator = new MetaAllocatorAgent();
-const decisionEngine = new DecisionEngine();
-const simulationEngine = new SimulationEngine();
-const performanceTracker = new PerformanceTracker();
+function initializeServices() {
+    log.info('Initializing agents and services...');
+
+    agents = [
+        new ArbitrageAgent(),
+        new MomentumAgent(),
+        new MeanReversionAgent(),
+        new SentimentAgent(),
+        new PortfolioOptimizationAgent(),
+    ];
+
+    metaAllocator = new MetaAllocatorAgent();
+    // decisionEngine initialized implicitly inside agents or unused
+    simulationEngine = new SimulationEngine();
+    performanceTracker = new PerformanceTracker();
+
+    log.info({ agentCount: agents.length }, 'Services initialized');
+}
 
 /**
  * Main trading cycle — runs on schedule or on-demand.
@@ -61,21 +73,26 @@ const performanceTracker = new PerformanceTracker();
  *  6. Forward validated trades to Trade Executor
  */
 async function runTradingCycle(): Promise<void> {
-    const config = getConfig();
-    const db = getDatabase();
+    // Ensure services are initialized
+    if (!metaAllocator) {
+        throw new Error('Services not initialized. Call initializeServices() first.');
+    }
 
     log.info('🔄 Starting trading cycle...');
+    await logActivity('INFO', 'SYSTEM', 'Starting trading cycle...');
 
     try {
         // ── Step 1: Fetch active markets ──
         const markets = await fetchActiveMarkets();
         log.info({ marketCount: markets.length }, 'Active markets fetched');
+        await logActivity('INFO', 'ANALYSIS', `Fetched ${markets.length} active markets. Analyzing top 20...`);
 
         // ── Step 2: Get portfolio state ──
         const portfolio = await getPortfolioState();
 
         if (portfolio.killSwitchActive) {
             log.error('🚨 Kill switch active — skipping trading cycle');
+            await logActivity('WARN', 'SYSTEM', 'Kill switch is ACTIVE. Skipping trading cycle.');
             return;
         }
 
@@ -104,6 +121,12 @@ async function runTradingCycle(): Promise<void> {
 
                 if (!consensus.shouldTrade) continue;
 
+                await logActivity('INFO', 'ANALYSIS', `Found trade consensus for "${market.question.slice(0, 50)}..."`, {
+                    side: consensus.side,
+                    confidence: consensus.aggregateConfidence,
+                    signals: signals.length
+                });
+
                 // ── Step 5: Validate with Risk Guardian ──
                 const tradeSignal: TradeSignal = {
                     trade: true,
@@ -129,8 +152,15 @@ async function runTradingCycle(): Promise<void> {
                         },
                         'Trade rejected by Risk Guardian'
                     );
+                    await logActivity('WARN', 'RISK', `Risk Guardian rejected trade for "${market.question.slice(0, 30)}..."`, {
+                        reasons: riskResult.rejectionReasons
+                    });
                     continue;
                 }
+
+                await logActivity('SUCCESS', 'RISK', `Risk Guardian approved trade for "${market.question.slice(0, 30)}..."`, {
+                    size: riskResult.adjustedSizeUsd
+                });
 
                 // ── Step 6: Execute trade ──
                 const executionRequest: TradeExecutionRequest = {
@@ -158,6 +188,10 @@ async function runTradingCycle(): Promise<void> {
                     },
                     '✅ Trade executed'
                 );
+                await logActivity('TRADE', 'EXECUTION', `Executed trade for "${market.question.slice(0, 30)}..."`, {
+                    side: consensus.side,
+                    size: riskResult.adjustedSizeUsd
+                });
             } catch (error) {
                 log.error(
                     { market: market.question?.slice(0, 50), error: (error as Error).message },
@@ -182,8 +216,10 @@ async function runTradingCycle(): Promise<void> {
             },
             '✅ Trading cycle complete'
         );
+        await logActivity('SUCCESS', 'SYSTEM', `Trading cycle complete. Processed 20 markets, executed ${totalTrades} trades.`);
     } catch (error) {
         log.error({ error: (error as Error).message }, '❌ Trading cycle failed');
+        await logActivity('ERROR', 'SYSTEM', `Trading cycle FAILED: ${(error as Error).message}`);
     }
 }
 
@@ -201,7 +237,7 @@ async function fetchActiveMarkets(): Promise<MarketSnapshot[]> {
             take: 50,
         });
 
-        return dbMarkets.map((m) => ({
+        return dbMarkets.map((m: { conditionId: string; questionId: string; question: string; priceYes: number; priceNo: number; volume24h: number; liquidity: number; endDate: Date | null }) => ({
             conditionId: m.conditionId,
             questionId: m.questionId,
             question: m.question,
@@ -228,7 +264,7 @@ async function fetchActiveMarkets(): Promise<MarketSnapshot[]> {
             timeout: 15_000,
         });
 
-        return response.data.map((m: Record<string, unknown>) => ({
+        return response.data.map((m: any) => ({
             conditionId: String(m.conditionId || m.condition_id || ''),
             questionId: String(m.questionId || m.question_id || ''),
             question: String(m.question || ''),
@@ -272,7 +308,7 @@ async function getPortfolioState(): Promise<PortfolioState> {
         maxDrawdown: portfolio?.maxDrawdown || 0,
         killSwitchActive: portfolio?.killSwitchActive || false,
         capitalPreservation: portfolio?.capitalPreservation || false,
-        positions: positions.map((p) => ({
+        positions: positions.map((p: { marketId: string; side: string; sizeUsd: number; avgEntryPrice: number; currentPrice: number; unrealizedPnl: number; realizedPnl: number }) => ({
             marketId: p.marketId,
             conditionId: p.marketId,
             side: p.side as 'YES' | 'NO',
@@ -330,7 +366,12 @@ async function executeTrade(request: TradeExecutionRequest): Promise<void> {
 // ── Express Server ──
 
 async function main(): Promise<void> {
+    // 1. Load config FIRST
     const config = loadConfig();
+
+    // 2. Initialize agents (connects to DB)
+    initializeServices();
+
     const app = express();
 
     app.use(helmet());
@@ -338,7 +379,7 @@ async function main(): Promise<void> {
     app.use(compression());
     app.use(express.json({ limit: '1mb' }));
 
-    const _db = getDatabase();
+    // db initialized implicitly
     const auth = serviceAuthMiddleware(['admin']);
 
     // ── Health Check ──

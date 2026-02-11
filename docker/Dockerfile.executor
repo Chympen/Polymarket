@@ -4,11 +4,13 @@ COPY package.json tsconfig.base.json ./
 COPY shared-lib ./shared-lib
 COPY trade-executor-service ./trade-executor-service
 RUN npm install --workspace=shared-lib --workspace=trade-executor-service
+RUN cd shared-lib && npx prisma generate
 RUN npm run build --workspace=shared-lib
 RUN npm run build --workspace=trade-executor-service
 
 FROM node:20-alpine AS runner
 WORKDIR /app
+RUN apk add --no-cache openssl
 ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/shared-lib/dist ./shared-lib/dist
@@ -16,6 +18,7 @@ COPY --from=builder /app/shared-lib/package.json ./shared-lib/package.json
 COPY --from=builder /app/shared-lib/prisma ./shared-lib/prisma
 COPY --from=builder /app/trade-executor-service/dist ./trade-executor-service/dist
 COPY --from=builder /app/trade-executor-service/package.json ./trade-executor-service/package.json
+RUN npx prisma generate --schema=./shared-lib/prisma/schema.prisma
 RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001 -G appgroup
 USER appuser
 EXPOSE 3003

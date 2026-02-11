@@ -16,7 +16,7 @@ export class ExposureTracker {
             where: { marketId, status: 'OPEN' },
         });
 
-        const totalExposure = positions.reduce((sum, pos) => sum + pos.sizeUsd, 0);
+        const totalExposure = positions.reduce((sum: number, pos: { sizeUsd: number }) => sum + pos.sizeUsd, 0);
 
         this.log.debug({ marketId, totalExposure }, 'Market exposure calculated');
         return totalExposure;

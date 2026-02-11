@@ -56,7 +56,7 @@ export class MetaAllocatorAgent extends BaseAgent {
     async buildConsensus(
         signals: TradeSignal[],
         market: MarketSnapshot,
-        portfolio: PortfolioState
+        _portfolio: PortfolioState
     ): Promise<ConsensusResult> {
         if (signals.length === 0) {
             return this.noTradeConsensus();

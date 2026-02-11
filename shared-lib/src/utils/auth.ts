@@ -2,8 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { logger } from './logger';
 
-const JWT_SECRET = process.env.SERVICE_JWT_SECRET || '';
-
 export interface ServiceAuthPayload {
     service: string;
     iat: number;
@@ -15,10 +13,11 @@ export interface ServiceAuthPayload {
  * Tokens are short-lived (5 minutes) for security.
  */
 export function generateServiceToken(serviceName: string): string {
-    if (!JWT_SECRET) {
+    const secret = process.env.SERVICE_JWT_SECRET;
+    if (!secret) {
         throw new Error('SERVICE_JWT_SECRET is not configured');
     }
-    return jwt.sign({ service: serviceName }, JWT_SECRET, { expiresIn: '5m' });
+    return jwt.sign({ service: serviceName }, secret, { expiresIn: '5m' });
 }
 
 /**
@@ -27,6 +26,13 @@ export function generateServiceToken(serviceName: string): string {
  */
 export function serviceAuthMiddleware(allowedServices: string[]) {
     return (req: Request, res: Response, next: NextFunction): void => {
+        const secret = process.env.SERVICE_JWT_SECRET;
+        if (!secret) {
+            logger.error('SERVICE_JWT_SECRET is not configured');
+            res.status(500).json({ error: 'Internal Server Error: Auth configuration missing' });
+            return;
+        }
+
         const authHeader = req.headers.authorization;
 
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -38,7 +44,7 @@ export function serviceAuthMiddleware(allowedServices: string[]) {
         const token = authHeader.slice(7);
 
         try {
-            const decoded = jwt.verify(token, JWT_SECRET) as ServiceAuthPayload;
+            const decoded = jwt.verify(token, secret) as ServiceAuthPayload;
 
             if (!allowedServices.includes(decoded.service)) {
                 logger.warn(

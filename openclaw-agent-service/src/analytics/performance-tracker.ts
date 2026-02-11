@@ -40,7 +40,7 @@ export class PerformanceTracker {
 
         // ── Win Rate ──
         const profitableTrades = trades.filter(
-            (t) => t.filledPrice && t.price && t.filledPrice > t.price
+            (t: { filledPrice: number | null; price: number }) => t.filledPrice && t.price && t.filledPrice > t.price
         );
         const winRate = trades.length > 0 ? profitableTrades.length / trades.length : 0;
 
@@ -51,21 +51,21 @@ export class PerformanceTracker {
         const maxDrawdown = portfolio?.maxDrawdown || 0;
 
         // ── Trade Accuracy ──
-        const accurateDecisions = decisions.filter((d) => d.approved);
+        const accurateDecisions = decisions.filter((d: { approved: boolean }) => d.approved);
         const tradeAccuracy =
             decisions.length > 0 ? accurateDecisions.length / decisions.length : 0;
 
         // ── Average Confidence ──
         const avgConfidence =
             decisions.length > 0
-                ? decisions.reduce((s, d) => s + d.confidence, 0) / decisions.length
+                ? decisions.reduce((s: number, d: { confidence: number }) => s + d.confidence, 0) / decisions.length
                 : 0;
 
         // ── Confidence Calibration ──
         const calibration = this.calculateConfidenceCalibration(decisions);
 
         // ── Strategy Breakdown ──
-        const strategyBreakdown: StrategyPerformance[] = strategyScores.map((s) => ({
+        const strategyBreakdown: StrategyPerformance[] = strategyScores.map((s: { strategyId: string; strategyName: string; totalPnl: number; winRate: number; sharpeRatio: number; totalTrades: number; weight: number }) => ({
             strategyId: s.strategyId,
             strategyName: s.strategyName,
             pnl: s.totalPnl,

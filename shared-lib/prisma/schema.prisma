@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
 }
 
 datasource db {
@@ -209,4 +210,57 @@ model RiskEvent {
   @@index([severity])
   @@index([createdAt])
   @@map("risk_events")
+}
+
+// ────────────────────────────────────────
+// Budget Configuration (singleton)
+// ────────────────────────────────────────
+model BudgetConfig {
+  id                    String   @id @default(uuid())
+  maxDailyAiSpend       Float    @default(10.0) @map("max_daily_ai_spend")
+  maxMonthlyAiSpend     Float    @default(200.0) @map("max_monthly_ai_spend")
+  maxTotalTradeSpend    Float    @default(1000.0) @map("max_total_trade_spend")
+  maxTradeSize          Float    @default(50.0) @map("max_trade_size")
+  alertThresholdPercent Float    @default(80.0) @map("alert_threshold_percent")
+  aiSpendingPaused      Boolean  @default(false) @map("ai_spending_paused")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("budget_config")
+}
+
+// ────────────────────────────────────────
+// AI Cost Log
+// ────────────────────────────────────────
+model AiCostLog {
+  id                String   @id @default(uuid())
+  model             String
+  promptTokens      Int      @default(0) @map("prompt_tokens")
+  completionTokens  Int      @default(0) @map("completion_tokens")
+  totalTokens       Int      @default(0) @map("total_tokens")
+  costUsd           Float    @default(0) @map("cost_usd")
+  purpose           String   // trade_decision | market_analysis | sentiment | portfolio_optimization
+  relatedMarketId   String?  @map("related_market_id")
+  relatedDecisionId String?  @map("related_decision_id")
+  durationMs        Int?     @map("duration_ms")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([purpose])
+  @@map("ai_cost_log")
+}
+// ────────────────────────────────────────
+// Activity Log
+// ────────────────────────────────────────
+model ActivityLog {
+  id        String   @id @default(uuid())
+  level     String   @default("INFO") // INFO | SUCCESS | WARN | ERROR | TRADE
+  type      String   @default("SYSTEM") // SYSTEM | ANALYSIS | RISK | EXECUTION
+  message   String
+  details   Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([type])
+  @@map("activity_log")
 }

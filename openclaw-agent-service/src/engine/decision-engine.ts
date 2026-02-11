@@ -5,9 +5,6 @@ import {
     getDatabase,
     AIDecisionInput,
     AIDecisionOutput,
-    MarketSnapshot,
-    PortfolioState,
-    ExternalSignal,
 } from 'shared-lib';
 
 /**

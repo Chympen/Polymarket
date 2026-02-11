@@ -177,8 +177,8 @@ export class PositionSizer {
         portfolio: PortfolioState
     ): RiskCheckResult {
         const currentExposure = portfolio.positions
-            .filter((p) => p.marketId === signal.marketId)
-            .reduce((sum, p) => sum + p.sizeUsd, 0);
+            .filter((p: { marketId: string }) => p.marketId === signal.marketId)
+            .reduce((sum: number, p: { sizeUsd: number }) => sum + p.sizeUsd, 0);
 
         return {
             approved,

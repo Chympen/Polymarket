@@ -34,8 +34,6 @@ async function main(): Promise<void> {
     const rpcService = new PolygonRpcService();
     const orderService = new OrderExecutionService(walletService, rpcService);
 
-    const _db = getDatabase();
-
     // ── Health Check ──
     app.get('/health', (_req, res) => {
         res.json({

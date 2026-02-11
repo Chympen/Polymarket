@@ -29,7 +29,8 @@ async function main(): Promise<void> {
     app.use(compression());
     app.use(express.json({ limit: '1mb' }));
 
-    const _db = getDatabase();
+    // db initialized implicitly
+
 
     // Initialize services
     const exposureTracker = new ExposureTracker();
