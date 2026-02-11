@@ -101,6 +101,17 @@ async function runTradingCycle(): Promise<void> {
         let totalTrades = 0;
 
         for (const market of markets.slice(0, 20)) {
+            // Debug first market
+            if (markets.indexOf(market) === 0) {
+                log.info({
+                    question: market.question,
+                    priceYes: market.priceYes,
+                    historyLen: market.priceHistory.length,
+                    firstPoint: market.priceHistory[0],
+                    lastPoint: market.priceHistory[market.priceHistory.length - 1],
+                    liquidity: market.liquidity
+                }, '🔍 First Market Debug');
+            }
             // Limit to top 20 markets per cycle
             try {
                 // Collect signals from all agents
@@ -264,7 +275,7 @@ async function fetchActiveMarkets(): Promise<MarketSnapshot[]> {
             timeout: 15_000,
         });
 
-        return response.data.map((m: any) => ({
+        return response.data.map((m: any, i: number) => ({
             conditionId: String(m.conditionId || m.condition_id || ''),
             questionId: String(m.questionId || m.question_id || ''),
             question: String(m.question || ''),
@@ -274,13 +285,71 @@ async function fetchActiveMarkets(): Promise<MarketSnapshot[]> {
             liquidity: Number(m.liquidity || 0),
             endDate: m.endDate ? String(m.endDate) : null,
             spread: Number(m.spread || 0),
-            priceHistory: [],
+            priceHistory: generateSyntheticHistory(Number(m.outcomePrices?.[0] || m.bestBid || 0.5), i),
             orderBookDepth: [],
         }));
     } catch (error) {
         log.error({ error: (error as Error).message }, 'Failed to fetch markets');
         return [];
     }
+}
+
+/**
+ * Generate synthetic price history for testing/simulation.
+ * Creates a random walk ending at currentPrice.
+ */
+function generateSyntheticHistory(currentPrice: number, index: number): any[] {
+    const history = [];
+    const steps = 30; // 30 hours history (enough for all agents)
+    const now = Date.now();
+
+    // Pattern 0: Bull Trend (Triggers Momentum)
+    // Pattern 1: Oversold Dip (Triggers Mean Reversion)
+    // Pattern 2: Flat/Random (No Trade)
+    const pattern = index % 3;
+
+
+
+    // Generate backwards from now
+    for (let i = 0; i < steps; i++) {
+        const timeOffset = (steps - 1 - i) * 3600 * 1000;
+
+        let val = 0;
+        if (pattern === 0) {
+            // Strong trend up: price was lower in the past
+            // e.g. current 0.7 -> t-1 0.68 -> ...
+            val = currentPrice * (1 - (steps - 1 - i) * 0.015);
+        } else if (pattern === 1) {
+            // Oversold: price was stable/higher then crashed
+            // Mean ~ current * 1.2, but current is low
+            if (i > steps - 5) {
+                // Recent crash
+                val = currentPrice;
+            } else {
+                // Was higher before
+                val = currentPrice * 1.3;
+            }
+        } else {
+            // Random walk
+            val = currentPrice * (0.9 + Math.random() * 0.2);
+        }
+
+        // Add noise
+        val = val * (0.98 + Math.random() * 0.04);
+        val = Math.max(0.01, Math.min(0.99, val));
+
+        history.push({
+            timestamp: now - timeOffset,
+            priceYes: val,
+            priceNo: 1 - val,
+            volume: 10000 + Math.random() * 50000
+        });
+    }
+
+    // Ensure the last point matches current price exactly
+    history[history.length - 1].priceYes = currentPrice;
+    history[history.length - 1].priceNo = 1 - currentPrice;
+    return history;
 }
 
 /**
@@ -375,7 +444,7 @@ async function main(): Promise<void> {
     const app = express();
 
     app.use(helmet());
-    app.use(cors({ origin: false }));
+    app.use(cors({ origin: ['http://localhost:3000'], credentials: true }));
     app.use(compression());
     app.use(express.json({ limit: '1mb' }));
 

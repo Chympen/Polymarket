@@ -23,7 +23,7 @@ async function main(): Promise<void> {
 
     // Security middleware
     app.use(helmet());
-    app.use(cors({ origin: false })); // No CORS — internal service only
+    app.use(cors({ origin: ['http://localhost:3000'], credentials: true })); // Allow dashboard
     app.use(compression());
     app.use(express.json({ limit: '1mb' }));
 
