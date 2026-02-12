@@ -19,8 +19,8 @@ services:
       RISK_GUARDIAN_URL: http://risk-guardian:3002
       TRADE_EXECUTOR_URL: http://trade-executor:3003
       LLM_MODEL: gpt-4-turbo-preview
+      LLM_BASE_URL: http://ollama:11434/v1
     restart: unless-stopped
-
   # ── Risk Guardian Service ──
   risk-guardian:
     build:
@@ -53,3 +53,23 @@ services:
       LOG_LEVEL: info
       POLYGON_RPC_URL: https://polygon-rpc.com
     restart: unless-stopped
+
+  # ── Cloudflare Tunnel ──
+  tunnel:
+    container_name: cloudflared
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run --token ${TUNNEL_TOKEN}
+    restart: always
+
+  # ── Ollama (Local AI) ──
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  ollama_data:

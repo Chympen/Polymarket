@@ -27,6 +27,7 @@ const envSchema = z.object({
     // LLM (only for agent service)
     OPENAI_API_KEY: z.string().optional(),
     LLM_MODEL: z.string().default('gpt-4-turbo-preview'),
+    LLM_BASE_URL: z.string().url().optional(),
 
     // Service URLs
     RISK_GUARDIAN_URL: z.string().url().optional(),

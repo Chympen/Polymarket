@@ -22,8 +22,11 @@ export class CorrelationService {
 
     constructor() {
         const config = getConfig();
-        if (config.OPENAI_API_KEY) {
-            this.openai = new OpenAI({ apiKey: config.OPENAI_API_KEY });
+        if (config.OPENAI_API_KEY || config.LLM_BASE_URL) {
+            this.openai = new OpenAI({
+                apiKey: config.OPENAI_API_KEY || 'ollama',
+                baseURL: config.LLM_BASE_URL,
+            });
         }
     }
 
