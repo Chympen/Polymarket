@@ -33,6 +33,11 @@ import { BaseAgent } from './agents/base.agent';
 // import { DecisionEngine } from './engine/decision-engine';
 import { SimulationEngine } from './simulation/simulation-engine';
 import { PerformanceTracker } from './analytics/performance-tracker';
+import { RegimeDetector } from './services/regime-detector.service';
+import { MemoryService } from './services/memory.service';
+import { PostMortemService } from './services/post-mortem.service';
+import { FeedbackService } from './services/feedback.service';
+import { CorrelationService } from './services/correlation.service';
 
 const log = logger.child({ module: 'AgentServiceMain' });
 
@@ -41,6 +46,11 @@ let agents: BaseAgent[] = [];
 let metaAllocator: MetaAllocatorAgent;
 let simulationEngine: SimulationEngine;
 let performanceTracker: PerformanceTracker;
+let regimeDetector: RegimeDetector;
+let memoryService: MemoryService;
+let postMortemService: PostMortemService;
+let feedbackService: FeedbackService;
+let correlationService: CorrelationService;
 
 function initializeServices() {
     log.info('Initializing agents and services...');
@@ -57,6 +67,11 @@ function initializeServices() {
     // decisionEngine initialized implicitly inside agents or unused
     simulationEngine = new SimulationEngine();
     performanceTracker = new PerformanceTracker();
+    regimeDetector = new RegimeDetector();
+    memoryService = new MemoryService();
+    postMortemService = new PostMortemService();
+    feedbackService = new FeedbackService();
+    correlationService = new CorrelationService();
 
     log.info({ agentCount: agents.length }, 'Services initialized');
 }
@@ -531,6 +546,34 @@ async function main(): Promise<void> {
             await metaAllocator.selfReflect();
             res.json({ success: true, message: 'Self-reflection complete' });
         } catch (error) {
+            res.status(500).json({ error: (error as Error).message });
+        }
+    });
+
+    // ── Smart Overview (Combined Intelligence Data) ──
+    app.get('/smart-overview', auth, async (_req, res) => {
+        try {
+            const [feedback, memory, regimeHistory, postMortem, clusters] = await Promise.all([
+                feedbackService.getFeedbackSummary(),
+                memoryService.getMemoryStats(),
+                regimeDetector.getRegimeHistory(10),
+                postMortemService.getPostMortemStats(),
+                correlationService.getClusterStats(),
+            ]);
+
+            res.json({
+                feedback,
+                memory,
+                regime: {
+                    current: regimeDetector.getCurrentRegime()?.regime || 'STABLE_RANGE',
+                    history: regimeHistory,
+                },
+                postMortem,
+                clusters,
+                timestamp: Date.now(),
+            });
+        } catch (error) {
+            log.error({ error: (error as Error).message }, 'Failed to generate smart overview');
             res.status(500).json({ error: (error as Error).message });
         }
     });
