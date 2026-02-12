@@ -242,9 +242,9 @@ export class SimulationEngine {
 
         if (returns.length < 2) return 0;
 
-        const mean = returns.reduce((s, r) => s + r, 0) / returns.length;
+        const mean = returns.reduce((s: number, r: number) => s + r, 0) / returns.length;
         const variance =
-            returns.reduce((s, r) => s + Math.pow(r - mean, 2), 0) / returns.length;
+            returns.reduce((s: number, r: number) => s + Math.pow(r - mean, 2), 0) / returns.length;
         const stdDev = Math.sqrt(variance);
 
         if (stdDev === 0) return 0;

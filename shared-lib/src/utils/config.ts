@@ -21,6 +21,7 @@ const envSchema = z.object({
 
     // Wallet (only for executor)
     WALLET_SECRET_ARN: z.string().optional(),
+    WALLET_PRIVATE_KEY: z.string().optional(),
     AWS_REGION: z.string().default('us-east-1'),
 
     // LLM (only for agent service)

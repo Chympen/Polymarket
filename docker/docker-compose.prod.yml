@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+
+  # ── OpenClaw Agent Service ──
+  agent-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent.prod
+    ports:
+      - '3001:3001'
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      MODE: live
+      SERVICE_NAME: openclaw-agent-service
+      LOG_LEVEL: info
+      RISK_GUARDIAN_URL: http://risk-guardian:3002
+      TRADE_EXECUTOR_URL: http://trade-executor:3003
+      LLM_MODEL: gpt-4-turbo-preview
+    restart: unless-stopped
+
+  # ── Risk Guardian Service ──
+  risk-guardian:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.risk-guardian.prod
+    ports:
+      - '3002:3002'
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      MODE: live
+      SERVICE_NAME: risk-guardian-service
+      LOG_LEVEL: info
+    restart: unless-stopped
+
+  # ── Trade Executor Service ──
+  trade-executor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.trade-executor.prod
+    ports:
+      - '3003:3003'
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      MODE: live
+      SERVICE_NAME: trade-executor-service
+      LOG_LEVEL: info
+      POLYGON_RPC_URL: https://polygon-rpc.com
+    restart: unless-stopped

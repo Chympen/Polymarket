@@ -2,8 +2,8 @@
 // Shared Library — Barrel Export
 // ────────────────────────────────────────
 
-export * from './types/index';
-export * from './constants/index';
+export * from './types';
+export * from './constants';
 export { logger, createChildLogger } from './utils/logger';
 export { generateServiceToken, serviceAuthMiddleware } from './utils/auth';
 export { loadConfig, getConfig } from './utils/config';

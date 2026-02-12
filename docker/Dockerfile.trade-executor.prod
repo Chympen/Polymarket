@@ -1,0 +1,22 @@
+FROM node:20-alpine
+WORKDIR /app
+RUN apk add --no-cache openssl
+
+ENV NODE_ENV=production
+
+COPY package.json tsconfig.base.json ./
+COPY shared-lib/package.json ./shared-lib/
+COPY shared-lib/dist ./shared-lib/dist
+COPY shared-lib/prisma ./shared-lib/prisma
+
+COPY trade-executor-service/package.json ./trade-executor-service/
+COPY trade-executor-service/dist ./trade-executor-service/dist
+
+RUN npm install --omit=dev --workspace=shared-lib --workspace=trade-executor-service
+RUN npx prisma generate --schema=./shared-lib/prisma/schema.prisma
+
+RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001 -G appgroup
+USER appuser
+
+EXPOSE 3003
+CMD ["node", "trade-executor-service/dist/index.js"]

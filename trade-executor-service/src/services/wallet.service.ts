@@ -53,11 +53,19 @@ export class WalletService {
             return '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80';
         }
 
-        const secretArn = config.WALLET_SECRET_ARN;
-        if (!secretArn) {
-            throw new Error('WALLET_SECRET_ARN is required in live mode');
+        // 1. Try environment variable first (cheaper/simpler for Railway/small deployments)
+        if (config.WALLET_PRIVATE_KEY) {
+            this.log.info('Private key loaded from environment variable');
+            return config.WALLET_PRIVATE_KEY;
         }
 
+        // 2. Fallback to AWS Secrets Manager
+        const secretArn = config.WALLET_SECRET_ARN;
+        if (!secretArn) {
+            throw new Error('Either WALLET_PRIVATE_KEY or WALLET_SECRET_ARN is required in live mode');
+        }
+
+        this.log.info({ secretArn }, 'Attempting to load private key from AWS Secrets Manager');
         const client = new SecretsManagerClient({ region: config.AWS_REGION });
 
         try {
@@ -79,7 +87,7 @@ export class WalletService {
             return key;
         } catch (error) {
             this.log.error({ error: (error as Error).message }, 'Failed to load wallet key');
-            throw new Error('Failed to load wallet private key from Secrets Manager');
+            throw new Error(`Failed to load wallet private key: ${(error as Error).message}`);
         }
     }
 

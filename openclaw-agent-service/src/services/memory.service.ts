@@ -1,9 +1,7 @@
 import {
     logger,
     getDatabase,
-    getConfig,
 } from 'shared-lib';
-import OpenAI from 'openai';
 
 /**
  * MemoryService — Case-Based Reasoning / Long-Term Memory (Feature 2)

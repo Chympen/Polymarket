@@ -2,6 +2,7 @@ import {
     logger,
     getDatabase,
     MarketSnapshot,
+    PortfolioState,
     STRATEGY_IDS,
     logActivity,
 } from 'shared-lib';
@@ -36,12 +37,12 @@ export class RegimeDetector {
         }
 
         // ── Calculate aggregate market metrics ──
-        const metrics = markets.map(m => this.computeMarketMetrics(m));
+        const metrics = markets.map((m: MarketSnapshot) => this.computeMarketMetrics(m));
 
-        const avgVolatility = metrics.reduce((s, m) => s + m.volatility, 0) / metrics.length;
-        const avgTrendStrength = metrics.reduce((s, m) => s + m.trendStrength, 0) / metrics.length;
-        const avgLiquidity = metrics.reduce((s, m) => s + m.liquidity, 0) / metrics.length;
-        const avgSpread = metrics.reduce((s, m) => s + m.spread, 0) / metrics.length;
+        const avgVolatility = metrics.reduce((s: number, m: any) => s + m.volatility, 0) / metrics.length;
+        const avgTrendStrength = metrics.reduce((s: number, m: any) => s + m.trendStrength, 0) / metrics.length;
+        const avgLiquidity = metrics.reduce((s: number, m: any) => s + m.liquidity, 0) / metrics.length;
+        const avgSpread = metrics.reduce((s: number, m: any) => s + m.spread, 0) / metrics.length;
 
         // ── Classify regime ──
         let regime: string;
@@ -137,7 +138,7 @@ export class RegimeDetector {
         liquidity: number;
         spread: number;
     } {
-        const history = market.priceHistory || [];
+        const history = market.priceHistory as any[] || [];
 
         if (history.length < 5) {
             return {

@@ -4,7 +4,7 @@ import {
     getConfig,
     MarketSnapshot,
     PortfolioState,
-    logActivity,
+    PositionState,
 } from 'shared-lib';
 import OpenAI from 'openai';
 
@@ -19,7 +19,6 @@ export class CorrelationService {
     private readonly log = logger.child({ module: 'CorrelationService' });
     private readonly db = getDatabase();
     private openai: OpenAI | null = null;
-    private clusterCache: Map<string, any> = new Map();
 
     constructor() {
         const config = getConfig();
@@ -106,7 +105,7 @@ Group markets that would be affected by the same events. Use 3-6 clusters.`,
      */
     async checkClusterExposure(
         marketId: string,
-        marketQuestion: string,
+        _marketQuestion: string,
         proposedSizeUsd: number,
         portfolio: PortfolioState
     ): Promise<{
@@ -130,11 +129,11 @@ Group markets that would be affected by the same events. Use 3-6 clusters.`,
                 }
 
                 // Calculate current exposure in this cluster
-                const positions = portfolio.positions.filter(p =>
+                const positions = portfolio.positions.filter((p: PositionState) =>
                     ids.some((id: string) => p.marketId.startsWith(id) || id.startsWith(p.marketId.slice(0, 8)))
                 );
 
-                const currentExposure = positions.reduce((sum, p) => sum + p.sizeUsd, 0);
+                const currentExposure = positions.reduce((sum: number, p: PositionState) => sum + p.sizeUsd, 0);
                 const maxExposure = cluster.maxExposure || portfolio.totalCapital * 0.15;
 
                 if (currentExposure + proposedSizeUsd > maxExposure) {

@@ -1,0 +1,32 @@
+FROM node:20-alpine
+WORKDIR /app
+RUN apk add --no-cache openssl
+
+# Set environment
+ENV NODE_ENV=production
+
+# Copy root manifest
+COPY package.json tsconfig.base.json ./
+
+# Copy shared library (pre-built)
+COPY shared-lib/package.json ./shared-lib/
+COPY shared-lib/dist ./shared-lib/dist
+COPY shared-lib/prisma ./shared-lib/prisma
+
+# Copy agent service (pre-built)
+COPY openclaw-agent-service/package.json ./openclaw-agent-service/
+COPY openclaw-agent-service/dist ./openclaw-agent-service/dist
+
+# Install production dependencies only
+# This avoids building from source and skip devDependencies
+RUN npm install --omit=dev --workspace=shared-lib --workspace=openclaw-agent-service
+
+# Generate Prisma client (needed for runtime)
+RUN npx prisma generate --schema=./shared-lib/prisma/schema.prisma
+
+# Security
+RUN addgroup -g 1001 -S appgroup && adduser -S appuser -u 1001 -G appgroup
+USER appuser
+
+EXPOSE 3001
+CMD ["node", "openclaw-agent-service/dist/index.js"]
