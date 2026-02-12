@@ -33,6 +33,9 @@ export const agentApi = {
     performance: () => safeFetch(`${AGENT_URL}/performance`),
     selfReflect: () => safeFetch(`${AGENT_URL}/self-reflect`, { method: 'POST' }),
     getSmartOverview: () => safeFetch(`${AGENT_URL}/smart-overview`),
+    // Control
+    status: () => safeFetch(`${AGENT_URL}/status`),
+    toggle: () => safeFetch(`${AGENT_URL}/toggle`, { method: 'POST' }),
 };
 
 // ── Risk Guardian ──

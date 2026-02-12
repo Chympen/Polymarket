@@ -40,18 +40,25 @@ export default function DashboardPage() {
   const [totalTrades, setTotalTrades] = useState(0);
   const [positionCount, setPositionCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [botActive, setBotActive] = useState(false); // Default off
 
   useEffect(() => {
     async function fetchData() {
       try {
-        const [healthRes, portfolioRes] = await Promise.all([
+        const [healthRes, portfolioRes, controlRes] = await Promise.all([
           fetch('/api/health'),
           fetch('/api/portfolio'),
+          fetch('/api/control'),
         ]);
 
         if (healthRes.ok) {
           const healthData = await healthRes.json();
           setServices(healthData.services);
+        }
+
+        if (controlRes.ok) {
+          const controlData = await controlRes.json();
+          setBotActive(controlData?.active || false);
         }
 
         if (portfolioRes.ok) {
@@ -73,6 +80,18 @@ export default function DashboardPage() {
     const interval = setInterval(fetchData, 15000);
     return () => clearInterval(interval);
   }, []);
+
+  async function toggleBot() {
+    try {
+      const res = await fetch('/api/control', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setBotActive(data.active);
+      }
+    } catch (error) {
+      console.error('Failed to toggle bot:', error);
+    }
+  }
 
   function formatUptime(seconds?: number) {
     if (!seconds) return '—';
@@ -119,9 +138,31 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <div className="page-header">
-        <h1>Dashboard</h1>
-        <p>System overview and real-time status — auto-refreshes every 15s</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1>Dashboard</h1>
+          <p>System overview and real-time status — auto-refreshes every 15s</p>
+        </div>
+        <button
+          onClick={toggleBot}
+          style={{
+            backgroundColor: botActive ? 'var(--color-danger)' : 'var(--color-success)',
+            color: 'white',
+            border: 'none',
+            padding: '12px 24px',
+            borderRadius: '8px',
+            fontSize: '1rem',
+            fontWeight: '600',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            transition: 'all 0.2s ease',
+          }}
+        >
+          <span style={{ fontSize: '1.2rem' }}>{botActive ? '🛑' : '🚀'}</span>
+          {botActive ? 'STOP BOT' : 'START BOT'}
+        </button>
       </div>
 
       {/* Service Health */}

@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  # ── OpenClaw Agent Service ──
+  agent-service:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+    ports:
+      - '3001:3001'
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      MODE: live
+      SERVICE_NAME: openclaw-agent-service
+      LOG_LEVEL: info
+      RISK_GUARDIAN_URL: http://risk-guardian:3002
+      TRADE_EXECUTOR_URL: http://trade-executor:3003
+      LLM_MODEL: llama3
+      LLM_BASE_URL: http://ollama:11434/v1
+    depends_on:
+      - ollama
+      - risk-guardian
+      - trade-executor
+    restart: unless-stopped
+
+  # ── Risk Guardian Service ──
+  risk-guardian:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.risk
+    ports:
+      - '3002:3002'
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      MODE: live
+      SERVICE_NAME: risk-guardian-service
+      LOG_LEVEL: info
+    restart: unless-stopped
+
+  # ── Trade Executor Service ──
+  trade-executor:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.executor
+    ports:
+      - '3003:3003'
+    env_file:
+      - ../.env
+    environment:
+      NODE_ENV: production
+      MODE: live
+      SERVICE_NAME: trade-executor-service
+      LOG_LEVEL: info
+      POLYGON_RPC_URL: https://polygon-rpc.com
+    restart: unless-stopped
+
+  # ── Ollama (Local AI) ──
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  # ── Cloudflare Tunnel ──
+  tunnel:
+    container_name: cloudflared
+    image: cloudflare/cloudflared:latest
+    env_file:
+      - ../.env
+    command: tunnel run
+    restart: always
+
+volumes:
+  ollama_data:
+    external: true
+    name: docker_ollama_data

@@ -52,12 +52,16 @@ let postMortemService: PostMortemService;
 let feedbackService: FeedbackService;
 let correlationService: CorrelationService;
 
+// Control Switch
+let isTradingActive = false; // Default to OFF as requested
+
 function initializeServices() {
     log.info('Initializing agents and services...');
 
     agents = [
         new ArbitrageAgent(),
         new MomentumAgent(),
+        new MeanReversionAgent(),
         new MeanReversionAgent(),
         new SentimentAgent(),
         new PortfolioOptimizationAgent(),
@@ -88,6 +92,12 @@ function initializeServices() {
  *  6. Forward validated trades to Trade Executor
  */
 async function runTradingCycle(): Promise<void> {
+    // Control Switch Check
+    if (!isTradingActive) {
+        log.info('⏸️ Trading cycle skipped: Bot is PAUSED.');
+        return;
+    }
+
     // Ensure services are initialized
     if (!metaAllocator) {
         throw new Error('Services not initialized. Call initializeServices() first.');
