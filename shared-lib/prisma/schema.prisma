@@ -264,3 +264,93 @@ model ActivityLog {
   @@index([type])
   @@map("activity_log")
 }
+
+// ────────────────────────────────────────
+// Trade Outcomes (Feedback Loop)
+// ────────────────────────────────────────
+model TradeOutcome {
+  id              String   @id @default(uuid())
+  tradeId         String   @map("trade_id")
+  marketId        String   @map("market_id")
+  strategyId      String   @map("strategy_id")
+  side            String   // YES | NO
+  entryPrice      Float    @map("entry_price")
+  exitPrice       Float?   @map("exit_price")
+  pnlUsd          Float    @default(0) @map("pnl_usd")
+  pnlPercent      Float    @default(0) @map("pnl_percent")
+  outcome         String   @default("PENDING") // PENDING | WIN | LOSS | BREAKEVEN
+  resolvedAt      DateTime? @map("resolved_at")
+  originalReasoning String? @map("original_reasoning")
+  marketQuestion  String?  @map("market_question")
+  lessonsLearned  String?  @map("lessons_learned")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([strategyId])
+  @@index([outcome])
+  @@index([createdAt])
+  @@map("trade_outcomes")
+}
+
+// ────────────────────────────────────────
+// Correction Notes (Post-Mortem)
+// ────────────────────────────────────────
+model CorrectionNote {
+  id                String   @id @default(uuid())
+  tradeOutcomeId    String   @map("trade_outcome_id")
+  marketQuestion    String   @map("market_question")
+  originalReasoning String   @map("original_reasoning")
+  whatWentWrong     String   @map("what_went_wrong")
+  correctionRule    String   @map("correction_rule")
+  severity          String   @default("MEDIUM") // LOW | MEDIUM | HIGH
+  strategyId        String   @map("strategy_id")
+  category          String?  // e.g., OVERCONFIDENCE | BAD_TIMING | IGNORED_RISK | SENTIMENT_BIAS
+  active            Boolean  @default(true)
+  appliedCount      Int      @default(0) @map("applied_count")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  @@index([strategyId])
+  @@index([active])
+  @@index([category])
+  @@map("correction_notes")
+}
+
+// ────────────────────────────────────────
+// Market Clusters (Correlation Awareness)
+// ────────────────────────────────────────
+model MarketCluster {
+  id              String   @id @default(uuid())
+  clusterName     String   @map("cluster_name")
+  description     String?
+  marketIds       Json     @map("market_ids") // Array of condition IDs
+  totalExposure   Float    @default(0) @map("total_exposure")
+  maxExposure     Float    @default(500) @map("max_exposure")
+  correlationScore Float   @default(0) @map("correlation_score")
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  @@index([clusterName])
+  @@map("market_clusters")
+}
+
+// ────────────────────────────────────────
+// Market Regime Snapshots
+// ────────────────────────────────────────
+model MarketRegimeSnapshot {
+  id              String   @id @default(uuid())
+  regime          String   // STABLE_RANGE | VOLATILE_TREND | LOW_LIQUIDITY | HIGH_MOMENTUM | MEAN_REVERTING
+  confidence      Float    @default(0)
+  avgVolatility   Float    @default(0) @map("avg_volatility")
+  avgTrendStrength Float   @default(0) @map("avg_trend_strength")
+  avgLiquidity    Float    @default(0) @map("avg_liquidity")
+  marketsSampled  Int      @default(0) @map("markets_sampled")
+  strategyMultipliers Json? @map("strategy_multipliers") // { "momentum": 1.5, "mean-reversion": 0.8, ... }
+  details         Json?
+  snapshotDate    DateTime @default(now()) @map("snapshot_date")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  @@index([snapshotDate])
+  @@index([regime])
+  @@map("market_regime_snapshots")
+}

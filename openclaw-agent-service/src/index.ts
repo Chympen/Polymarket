@@ -85,7 +85,15 @@ async function runTradingCycle(): Promise<void> {
         // ── Step 1: Fetch active markets ──
         const markets = await fetchActiveMarkets();
         log.info({ marketCount: markets.length }, 'Active markets fetched');
-        await logActivity('INFO', 'ANALYSIS', `Fetched ${markets.length} active markets. Analyzing top 20...`);
+        await logActivity('INFO', 'ANALYSIS', `Fetched ${markets.length} active markets. Analyzing top 20...`, {
+            marketsAnalyzed: markets.slice(0, 20).map(m => ({
+                question: m.question,
+                conditionId: m.conditionId,
+                priceYes: m.priceYes,
+                volume24h: m.volume24h,
+                liquidity: m.liquidity,
+            })),
+        });
 
         // ── Step 2: Get portfolio state ──
         const portfolio = await getPortfolioState();
@@ -99,6 +107,7 @@ async function runTradingCycle(): Promise<void> {
         // ── Step 3: Run agents on each market ──
         let totalSignals = 0;
         let totalTrades = 0;
+        const processedMarketSummaries: Array<{ question: string; signals: number; traded: boolean; outcome?: string }> = [];
 
         for (const market of markets.slice(0, 20)) {
             // Debug first market
@@ -124,13 +133,19 @@ async function runTradingCycle(): Promise<void> {
                     }
                 }
 
-                if (signals.length === 0) continue;
+                if (signals.length === 0) {
+                    processedMarketSummaries.push({ question: market.question, signals: 0, traded: false, outcome: 'no_signal' });
+                    continue;
+                }
                 totalSignals += signals.length;
 
                 // ── Step 4: Build consensus ──
                 const consensus = await metaAllocator.buildConsensus(signals, market, portfolio);
 
-                if (!consensus.shouldTrade) continue;
+                if (!consensus.shouldTrade) {
+                    processedMarketSummaries.push({ question: market.question, signals: signals.length, traded: false, outcome: 'no_consensus' });
+                    continue;
+                }
 
                 await logActivity('INFO', 'ANALYSIS', `Found trade consensus for "${market.question.slice(0, 50)}..."`, {
                     side: consensus.side,
@@ -166,6 +181,7 @@ async function runTradingCycle(): Promise<void> {
                     await logActivity('WARN', 'RISK', `Risk Guardian rejected trade for "${market.question.slice(0, 30)}..."`, {
                         reasons: riskResult.rejectionReasons
                     });
+                    processedMarketSummaries.push({ question: market.question, signals: signals.length, traded: false, outcome: 'risk_rejected' });
                     continue;
                 }
 
@@ -203,6 +219,7 @@ async function runTradingCycle(): Promise<void> {
                     side: consensus.side,
                     size: riskResult.adjustedSizeUsd
                 });
+                processedMarketSummaries.push({ question: market.question, signals: signals.length, traded: true, outcome: 'executed' });
             } catch (error) {
                 log.error(
                     { market: market.question?.slice(0, 50), error: (error as Error).message },
@@ -227,7 +244,11 @@ async function runTradingCycle(): Promise<void> {
             },
             '✅ Trading cycle complete'
         );
-        await logActivity('SUCCESS', 'SYSTEM', `Trading cycle complete. Processed 20 markets, executed ${totalTrades} trades.`);
+        await logActivity('SUCCESS', 'SYSTEM', `Trading cycle complete. Processed 20 markets, executed ${totalTrades} trades.`, {
+            marketsProcessed: processedMarketSummaries,
+            signalsGenerated: totalSignals,
+            tradesExecuted: totalTrades,
+        });
     } catch (error) {
         log.error({ error: (error as Error).message }, '❌ Trading cycle failed');
         await logActivity('ERROR', 'SYSTEM', `Trading cycle FAILED: ${(error as Error).message}`);

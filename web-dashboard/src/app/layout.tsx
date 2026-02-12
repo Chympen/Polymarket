@@ -21,6 +21,12 @@ const navItems = [
     ],
   },
   {
+    section: 'Intelligence',
+    items: [
+      { href: '/intelligence', label: 'AI Intelligence', icon: '🧠' },
+    ],
+  },
+  {
     section: 'Risk & Budget',
     items: [
       { href: '/risk', label: 'Risk Management', icon: '🛡️' },
