@@ -5,8 +5,7 @@ applications:
       phases:
         preBuild:
           commands:
-            - cd .. && npm ci
-            - cd .. && npm run generate --workspace=shared-lib
+            - cd .. && npm ci && npm run generate --workspace=shared-lib
         build:
           commands:
             - cd .. && npm run build --workspace=web-dashboard
