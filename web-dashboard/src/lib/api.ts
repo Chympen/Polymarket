@@ -5,6 +5,12 @@ const AGENT_URL = process.env.AGENT_SERVICE_URL || 'http://localhost:3001';
 const RISK_URL = process.env.RISK_GUARDIAN_URL || 'http://localhost:3002';
 const EXECUTOR_URL = process.env.TRADE_EXECUTOR_URL || 'http://localhost:3003';
 
+if (process.env.NODE_ENV === 'production') {
+    if (AGENT_URL.includes('localhost')) console.warn('⚠️ AGENT_SERVICE_URL is set to localhost in production!');
+    if (RISK_URL.includes('localhost')) console.warn('⚠️ RISK_GUARDIAN_URL is set to localhost in production!');
+    if (EXECUTOR_URL.includes('localhost')) console.warn('⚠️ TRADE_EXECUTOR_URL is set to localhost in production!');
+}
+
 function generateToken(): string {
     return jwt.sign({ service: 'admin' }, JWT_SECRET, { expiresIn: '5m' });
 }

@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { handleApiError, successResponse } from '@/lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -11,11 +11,8 @@ export async function GET() {
             orderBy: { createdAt: 'desc' },
         });
 
-        return NextResponse.json({ positions });
+        return successResponse({ positions });
     } catch (error) {
-        return NextResponse.json(
-            { error: 'Failed to fetch positions', details: (error as Error).message },
-            { status: 500 }
-        );
+        return handleApiError(error as Error, 'Positions API');
     }
 }

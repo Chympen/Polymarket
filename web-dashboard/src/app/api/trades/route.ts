@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
+import { handleApiError, successResponse } from '@/lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -26,11 +27,8 @@ export async function GET(req: NextRequest) {
             prisma.trade.count({ where }),
         ]);
 
-        return NextResponse.json({ trades, total, limit, offset });
+        return successResponse({ trades, total, limit, offset });
     } catch (error) {
-        return NextResponse.json(
-            { error: 'Failed to fetch trades', details: (error as Error).message },
-            { status: 500 }
-        );
+        return handleApiError(error as Error, 'Trades API');
     }
 }

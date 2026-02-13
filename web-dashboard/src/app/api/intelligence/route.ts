@@ -1,18 +1,17 @@
-import { NextResponse } from 'next/server';
 import { agentApi } from '@/lib/api';
+import { handleApiError, successResponse } from '@/lib/api-utils';
 
 export async function GET() {
     try {
         // 1. Try to fetch real data from the Agent Service
-        // We use the agentApi client which handles the base URL and auth tokens
         const data = await agentApi.getSmartOverview();
-        return NextResponse.json(data);
+        if (!data) throw new Error('Agent service unreachable for smart-overview');
+        return successResponse(data);
     } catch (error) {
-        console.error('Error fetching intelligence data from Agent Service:', error);
+        console.warn('Fallback triggered for Intelligence API');
 
         // 2. Fallback to Mock Data if service is offline/erroring
-        // This ensures the UI doesn't crash during development or if services are down.
-        return NextResponse.json({
+        return successResponse({
             feedback: {
                 winRate: 0.65,
                 totalTrades: 42,

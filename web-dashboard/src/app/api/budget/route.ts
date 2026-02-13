@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
+import { handleApiError, successResponse } from '@/lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +46,7 @@ export async function GET() {
             _sum: { sizeUsd: true },
         });
 
-        return NextResponse.json({
+        return successResponse({
             config: config || {
                 maxDailyAiSpend: 10,
                 maxMonthlyAiSpend: 200,
@@ -64,10 +65,7 @@ export async function GET() {
             recentCosts,
         });
     } catch (error) {
-        return NextResponse.json(
-            { error: 'Failed to fetch budget data', details: (error as Error).message },
-            { status: 500 }
-        );
+        return handleApiError(error as Error, 'Budget API (GET)');
     }
 }
 
@@ -86,11 +84,8 @@ export async function POST(req: NextRequest) {
             await prisma.budgetConfig.create({ data: body });
         }
 
-        return NextResponse.json({ success: true });
+        return successResponse({ success: true });
     } catch (error) {
-        return NextResponse.json(
-            { error: 'Failed to update budget config', details: (error as Error).message },
-            { status: 500 }
-        );
+        return handleApiError(error as Error, 'Budget API (POST)');
     }
 }

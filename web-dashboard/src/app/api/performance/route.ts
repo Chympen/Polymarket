@@ -1,5 +1,5 @@
-import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
+import { handleApiError, successResponse } from '@/lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -16,14 +16,11 @@ export async function GET() {
             }),
         ]);
 
-        return NextResponse.json({
+        return successResponse({
             metrics: metrics.reverse(),
             strategies,
         });
     } catch (error) {
-        return NextResponse.json(
-            { error: 'Failed to fetch performance data', details: (error as Error).message },
-            { status: 500 }
-        );
+        return handleApiError(error as Error, 'Performance API');
     }
 }

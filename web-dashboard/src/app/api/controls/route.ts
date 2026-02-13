@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { agentApi } from '@/lib/api';
+import { handleApiError, successResponse } from '@/lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -9,25 +10,18 @@ export async function POST(req: NextRequest) {
 
         if (action === 'trigger-cycle') {
             const result = await agentApi.triggerCycle();
-            if (!result) {
-                return NextResponse.json({ error: 'Agent service unreachable' }, { status: 503 });
-            }
-            return NextResponse.json(result);
+            if (!result) throw new Error('Agent service unreachable for trigger-cycle');
+            return successResponse(result);
         }
 
         if (action === 'self-reflect') {
             const result = await agentApi.selfReflect();
-            if (!result) {
-                return NextResponse.json({ error: 'Agent service unreachable' }, { status: 503 });
-            }
-            return NextResponse.json(result);
+            if (!result) throw new Error('Agent service unreachable for self-reflect');
+            return successResponse(result);
         }
 
-        return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
+        return successResponse({ error: 'Unknown action' });
     } catch (error) {
-        return NextResponse.json(
-            { error: 'Control action failed', details: (error as Error).message },
-            { status: 500 }
-        );
+        return handleApiError(error as Error, 'Controls API (POST)');
     }
 }

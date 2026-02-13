@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { executorApi, agentApi } from '@/lib/api';
+import { handleApiError, successResponse } from '@/lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -84,7 +85,7 @@ export async function GET() {
             positionsList = positions;
         }
 
-        return NextResponse.json({
+        return successResponse({
             portfolio: displayPortfolio,
             positions: positionsList,
             todayTrades,
@@ -93,25 +94,6 @@ export async function GET() {
             wallet: walletInfo,
         });
     } catch (error) {
-        console.error('Portfolio fetch error:', error);
-
-        // Diagnostic info for Amplify/Cloud environments
-        const diagnosticInfo = {
-            hasDbUrl: !!process.env.DATABASE_URL,
-            dbUrlLength: process.env.DATABASE_URL?.length || 0,
-            nodeEnv: process.env.NODE_ENV,
-            agentUrl: process.env.AGENT_SERVICE_URL,
-            error: (error as Error).message,
-            stack: (error as Error).stack,
-        };
-
-        return NextResponse.json(
-            {
-                error: 'Failed to fetch portfolio data',
-                message: (error as Error).message,
-                diagnostics: diagnosticInfo
-            },
-            { status: 500 }
-        );
+        return handleApiError(error as Error, 'Portfolio API');
     }
 }

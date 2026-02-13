@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { prisma } from '@/lib/db';
+import { handleApiError, successResponse } from '@/lib/api-utils';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,7 +16,7 @@ export async function GET() {
             }),
         ]);
 
-        return NextResponse.json({
+        return successResponse({
             riskEvents,
             killSwitchActive: portfolio?.killSwitchActive || false,
             capitalPreservation: portfolio?.capitalPreservation || false,
@@ -23,10 +24,7 @@ export async function GET() {
             dailyPnlPercent: portfolio?.dailyPnlPercent || 0,
         });
     } catch (error) {
-        return NextResponse.json(
-            { error: 'Failed to fetch risk data', details: (error as Error).message },
-            { status: 500 }
-        );
+        return handleApiError(error as Error, 'Risk API (GET)');
     }
 }
 
@@ -38,21 +36,18 @@ export async function POST(req: NextRequest) {
             await prisma.portfolio.updateMany({
                 data: { killSwitchActive: true },
             });
-            return NextResponse.json({ success: true, message: 'Kill switch activated' });
+            return successResponse({ success: true, message: 'Kill switch activated' });
         }
 
         if (action === 'reset-kill-switch') {
             await prisma.portfolio.updateMany({
                 data: { killSwitchActive: false },
             });
-            return NextResponse.json({ success: true, message: 'Kill switch reset' });
+            return successResponse({ success: true, message: 'Kill switch reset' });
         }
 
-        return NextResponse.json({ error: 'Unknown action' }, { status: 400 });
+        return successResponse({ error: 'Unknown action' }); // sucessResponse but with error message as data
     } catch (error) {
-        return NextResponse.json(
-            { error: 'Risk action failed', details: (error as Error).message },
-            { status: 500 }
-        );
+        return handleApiError(error as Error, 'Risk API (POST)');
     }
 }
