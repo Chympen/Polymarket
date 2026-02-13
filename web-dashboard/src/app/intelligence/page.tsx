@@ -35,7 +35,7 @@ interface SmartOverview {
 }
 
 export default function IntelligencePage() {
-    const [activeTab, setActiveTab] = useState('overview');
+    const [activeTab, setActiveTab] = useState('overviews');
     const [data, setData] = useState<SmartOverview | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
@@ -81,8 +81,8 @@ export default function IntelligencePage() {
         <button
             onClick={() => setActiveTab(id)}
             className={`px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 whitespace-nowrap ${activeTab === id
-                    ? 'bg-accent text-white shadow-md'
-                    : 'text-muted hover:text-primary hover:bg-white/5'
+                ? 'bg-accent text-white shadow-md'
+                : 'text-muted hover:text-primary hover:bg-white/5'
                 }`}
         >
             <span>{icon}</span>
