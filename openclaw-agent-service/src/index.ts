@@ -54,6 +54,49 @@ let correlationService: CorrelationService;
 
 // Control Switch
 let isTradingActive = false; // Default to OFF as requested
+let isPaperTrading = process.env.PAPER_TRADING === 'true'; // Controlled by env var
+
+// Paper Trading State
+let paperPortfolio: PortfolioState = {
+    totalCapital: 1000, // $1,000 Starting Cash
+    availableCapital: 1000,
+    deployedCapital: 0,
+    totalPnl: 0,
+    dailyPnl: 0,
+    dailyPnlPercent: 0,
+    highWaterMark: 1000,
+    maxDrawdown: 0,
+    killSwitchActive: false,
+    capitalPreservation: false,
+    positions: []
+};
+
+/**
+ * Update Paper Portfolio values based on live market prices.
+ */
+function updatePaperPortfolio(markets: MarketSnapshot[]) {
+    let currentPortfolioValue = paperPortfolio.availableCapital;
+    let deployed = 0;
+
+    // Update each position with current market price
+    paperPortfolio.positions = paperPortfolio.positions.map(pos => {
+        const market = markets.find(m => m.conditionId === pos.conditionId);
+        if (market) {
+            pos.currentPrice = pos.side === 'YES' ? market.priceYes : market.priceNo;
+            const value = pos.sizeUsd * (pos.currentPrice / pos.avgEntryPrice); // Simplified mark-to-market
+            pos.unrealizedPnl = value - pos.sizeUsd;
+            currentPortfolioValue += value;
+            deployed += value;
+        }
+        return pos;
+    });
+
+    paperPortfolio.totalCapital = currentPortfolioValue;
+    paperPortfolio.deployedCapital = deployed;
+    paperPortfolio.totalPnl = paperPortfolio.totalCapital - 1000;
+    paperPortfolio.dailyPnl = paperPortfolio.totalPnl; // Simplified for now
+    paperPortfolio.dailyPnlPercent = (paperPortfolio.totalPnl / 1000) * 100;
+}
 
 function initializeServices() {
     log.info('Initializing agents and services...');
@@ -104,11 +147,20 @@ async function runTradingCycle(): Promise<void> {
     }
 
     log.info('🔄 Starting trading cycle...');
-    await logActivity('INFO', 'SYSTEM', 'Starting trading cycle...');
+    if (isPaperTrading) {
+        log.info('📝 PAPER TRADING MODE ACTIVE — No real funds will be used.');
+    } else {
+        log.warn('⚠️ LIVE TRADING MODE ACTIVE — Real funds AT RISK.');
+    }
+    await logActivity('INFO', 'SYSTEM', `Starting trading cycle (${isPaperTrading ? 'PAPER' : 'LIVE'})...`);
 
     try {
         // ── Step 1: Fetch active markets ──
         const markets = await fetchActiveMarkets();
+
+        // Update Paper Portfolio Prices
+        updatePaperPortfolio(markets);
+
         log.info({ marketCount: markets.length }, 'Active markets fetched');
         await logActivity('INFO', 'ANALYSIS', `Fetched ${markets.length} active markets. Analyzing top 20...`, {
             marketsAnalyzed: markets.slice(0, 20).map(m => ({
@@ -184,7 +236,7 @@ async function runTradingCycle(): Promise<void> {
                     marketId: market.conditionId,
                     conditionId: market.conditionId,
                     side: consensus.side,
-                    direction: 'BUY',
+                    direction: consensus.direction || 'BUY', // Default to BUY if missing
                     confidence: consensus.aggregateConfidence,
                     positionSizeUsd: consensus.positionSizeUsd,
                     reasoning: consensus.reasoning,
@@ -192,6 +244,85 @@ async function runTradingCycle(): Promise<void> {
                     strategyName: 'Meta Strategy Allocator',
                     timestamp: Date.now(),
                 };
+
+                // PAPER TRADING CHECK
+                if (isPaperTrading) {
+                    const direction = consensus.direction || 'BUY';
+
+                    log.info(
+                        {
+                            market: market.question.slice(0, 50),
+                            side: consensus.side,
+                            direction,
+                            size: consensus.positionSizeUsd.toFixed(2),
+                            confidence: consensus.aggregateConfidence.toFixed(3),
+                        },
+                        `📝 PAPER TRADE SIMULATED (${direction})`
+                    );
+
+                    // Execute Paper Trade
+                    if (direction === 'BUY') {
+                        if (paperPortfolio.availableCapital >= consensus.positionSizeUsd) {
+                            paperPortfolio.availableCapital -= consensus.positionSizeUsd;
+                            paperPortfolio.deployedCapital += consensus.positionSizeUsd;
+
+                            const entryPrice = consensus.side === 'YES' ? market.priceYes : market.priceNo;
+
+                            paperPortfolio.positions.push({
+                                marketId: market.conditionId,
+                                conditionId: market.conditionId,
+                                side: consensus.side,
+                                sizeUsd: consensus.positionSizeUsd,
+                                avgEntryPrice: entryPrice,
+                                currentPrice: entryPrice,
+                                unrealizedPnl: 0,
+                                realizedPnl: 0
+                            });
+
+                            await logActivity('TRADE', 'PAPER', `[PAPER] Bought ${consensus.side} on "${market.question.slice(0, 30)}..." @ ${entryPrice.toFixed(2)}`, {
+                                size: consensus.positionSizeUsd,
+                                confidence: consensus.aggregateConfidence,
+                                newBalance: paperPortfolio.availableCapital
+                            });
+                        } else {
+                            log.warn('📝 Paper Trading: Insufficient funds');
+                        }
+                    } else if (direction === 'SELL') {
+                        // Handle SELL (Exit)
+                        // Find position to sell
+                        const posIndex = paperPortfolio.positions.findIndex(p => p.marketId === market.conditionId && p.side === consensus.side);
+
+                        if (posIndex !== -1) {
+                            const position = paperPortfolio.positions[posIndex];
+                            const currentPrice = consensus.side === 'YES' ? market.priceYes : market.priceNo;
+                            const exitValue = position.sizeUsd * (currentPrice / position.avgEntryPrice);
+                            const pnl = exitValue - position.sizeUsd;
+
+                            paperPortfolio.availableCapital += exitValue;
+                            paperPortfolio.deployedCapital -= position.sizeUsd;
+                            paperPortfolio.realizedPnl = (paperPortfolio.realizedPnl || 0) + pnl; // Add realized PnL tracking if needed, mainly strictly capital
+
+                            // For now, assume full exit for simplicity in paper mode or handle partial?
+                            // Strategy usually sends full size for stop loss, partial for profit. 
+                            // Let's assume consensus.positionSizeUsd determines amount to reduce basis.
+                            // But usually PortfolioAgent sends specific size.
+
+                            // Simplified: Remove entire position for now to match 'strategy usually sends full exit on stop loss'.
+                            paperPortfolio.positions.splice(posIndex, 1);
+
+                            await logActivity('TRADE', 'PAPER', `[PAPER] Sold ${consensus.side} on "${market.question.slice(0, 30)}..." @ ${currentPrice.toFixed(2)} (PnL: $${pnl.toFixed(2)})`, {
+                                exitValue: exitValue,
+                                pnl: pnl,
+                                newBalance: paperPortfolio.availableCapital
+                            });
+                        } else {
+                            log.warn(`📝 Paper Trading: Cannot SELL, position not found for ${market.question.slice(0, 20)}`);
+                        }
+                    }
+
+                    processedMarketSummaries.push({ question: market.question, signals: signals.length, traded: true, outcome: `paper_${direction.toLowerCase()}` });
+                    continue; // Skip real validation and execution
+                }
 
                 const riskResult = await validateWithRiskGuardian(tradeSignal, portfolio);
 
@@ -215,11 +346,12 @@ async function runTradingCycle(): Promise<void> {
                 });
 
                 // ── Step 6: Execute trade ──
+                // ── Step 6: Execute trade ──
                 const executionRequest: TradeExecutionRequest = {
                     marketId: market.conditionId,
                     conditionId: market.conditionId,
                     side: consensus.side,
-                    direction: 'BUY',
+                    direction: consensus.direction || 'BUY',
                     type: 'MARKET',
                     sizeUsd: riskResult.adjustedSizeUsd,
                     maxSlippageBps: 200,
@@ -235,13 +367,15 @@ async function runTradingCycle(): Promise<void> {
                     {
                         market: market.question.slice(0, 50),
                         side: consensus.side,
+                        direction: consensus.direction || 'BUY',
                         size: riskResult.adjustedSizeUsd.toFixed(2),
                         confidence: consensus.aggregateConfidence.toFixed(3),
                     },
                     '✅ Trade executed'
                 );
-                await logActivity('TRADE', 'EXECUTION', `Executed trade for "${market.question.slice(0, 30)}..."`, {
+                await logActivity('TRADE', 'EXECUTION', `Executed ${consensus.direction || 'BUY'} ${consensus.side} for "${market.question.slice(0, 30)}..."`, {
                     side: consensus.side,
+                    direction: consensus.direction || 'BUY',
                     size: riskResult.adjustedSizeUsd
                 });
                 processedMarketSummaries.push({ question: market.question, signals: signals.length, traded: true, outcome: 'executed' });
@@ -495,7 +629,7 @@ async function main(): Promise<void> {
     app.use(express.json({ limit: '1mb' }));
 
     // db initialized implicitly
-    const auth = serviceAuthMiddleware(['admin']);
+    const auth = serviceAuthMiddleware(['admin']) as any;
 
     // ── Health Check ──
     app.get('/health', (_req, res) => {
@@ -588,8 +722,29 @@ async function main(): Promise<void> {
         }
     });
 
-    // ── Schedule trading cycle (every 5 mins) ──
-    cron.schedule('*/5 * * * *', () => {
+    // ── Control Switch ──
+    app.get('/status', (_req, res) => {
+        res.json({ active: isTradingActive, paper: isPaperTrading });
+    });
+
+    app.post('/toggle', auth, (_req, res) => {
+        isTradingActive = !isTradingActive;
+        log.info({ active: isTradingActive }, 'Trading bot status toggled');
+        res.json({ active: isTradingActive });
+    });
+
+    app.post('/toggle-mode', auth, (_req, res) => {
+        isPaperTrading = !isPaperTrading;
+        log.info({ paper: isPaperTrading }, 'Trading mode toggled');
+        res.json({ paper: isPaperTrading });
+    });
+
+    app.get('/paper-portfolio', auth, (_req, res) => {
+        res.json(paperPortfolio);
+    });
+
+    // ── Schedule trading cycle (every 10 seconds) ──
+    cron.schedule('*/10 * * * * *', () => {
         log.info('⏰ Scheduled trading cycle triggered');
         runTradingCycle().catch((err) =>
             log.error({ error: err.message }, 'Scheduled trading cycle failed')

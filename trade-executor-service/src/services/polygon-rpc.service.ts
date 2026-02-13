@@ -119,6 +119,16 @@ export class PolygonRpcService {
     }
 
     /**
+     * Get the Native USDC balance for an address (Circle Standard).
+     */
+    async getNativeUsdcBalance(address: string): Promise<bigint> {
+        const NATIVE_USDC = '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359';
+        const usdcAbi = ['function balanceOf(address) view returns (uint256)'];
+        const usdc = new ethers.Contract(NATIVE_USDC, usdcAbi, this.provider);
+        return usdc.balanceOf(address);
+    }
+
+    /**
      * Check USDC allowance for a spender.
      */
     async getUsdcAllowance(owner: string, spender: string): Promise<bigint> {

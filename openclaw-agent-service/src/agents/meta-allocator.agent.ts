@@ -53,6 +53,9 @@ export class MetaAllocatorAgent extends BaseAgent {
     /**
      * Build consensus from multiple agent signals for a single market.
      */
+    /**
+     * Build consensus from multiple agent signals for a single market.
+     */
     async buildConsensus(
         signals: TradeSignal[],
         market: MarketSnapshot,
@@ -73,9 +76,45 @@ export class MetaAllocatorAgent extends BaseAgent {
             weight: this.getStrategyWeight(signal.strategyId),
         }));
 
-        // ── Group votes by side ──
-        const yesVotes = votes.filter((v) => v.signal.side === 'YES');
-        const noVotes = votes.filter((v) => v.signal.side === 'NO');
+        // ── Group votes by direction and side ──
+        const buySignals = votes.filter(v => v.signal.direction === 'BUY');
+        const sellSignals = votes.filter(v => v.signal.direction === 'SELL');
+
+        // ── Check for critical SELL signals (Stop Loss / Take Profit) ──
+        // If any agent triggers a SELL (especially Portfolio Optimization), we prioritize exiting.
+        if (sellSignals.length > 0) {
+            // Aggressively prioritize selling if Risk/Portfolio agent says so
+            // For now, if ANY agent says SELL, we default to listening to it for safety.
+            const primarySell = sellSignals[0]; // Take the first sell signal (usually Portfolio agent)
+
+            this.log.info(
+                {
+                    market: market.question.slice(0, 50),
+                    reason: primarySell.signal.reasoning,
+                    strategy: primarySell.strategyName
+                },
+                '📉 SELL Signal prioritized'
+            );
+
+            return {
+                shouldTrade: true,
+                side: primarySell.signal.side,
+                direction: 'SELL',
+                aggregateConfidence: primarySell.signal.confidence,
+                positionSizeUsd: primarySell.signal.positionSizeUsd,
+                reasoning: `EXIT TRIGGERED by ${primarySell.strategyName}: ${primarySell.signal.reasoning} `,
+                votes: sellSignals,
+                consensusMethod: 'PRIORITY_OVERRIDE',
+            };
+        }
+
+        // ── Processing BUY Signals (Standard Consensus) ──
+        if (buySignals.length === 0) {
+            return this.noTradeConsensus();
+        }
+
+        const yesVotes = buySignals.filter((v) => v.signal.side === 'YES');
+        const noVotes = buySignals.filter((v) => v.signal.side === 'NO');
 
         // ── Weighted confidence aggregation ──
         const yesScore = yesVotes.reduce(
@@ -86,7 +125,7 @@ export class MetaAllocatorAgent extends BaseAgent {
             (sum, v) => sum + v.signal.confidence * v.weight,
             0
         );
-        const totalWeight = votes.reduce((sum, v) => sum + v.weight, 0);
+        const totalWeight = buySignals.reduce((sum, v) => sum + v.weight, 0);
 
         // ── Determine winning side ──
         const side: 'YES' | 'NO' = yesScore >= noScore ? 'YES' : 'NO';
@@ -102,7 +141,7 @@ export class MetaAllocatorAgent extends BaseAgent {
         // ── Apply Bayesian update ──
         aggregateConfidence = this.bayesianUpdate(
             aggregateConfidence,
-            signals.map((s) => s.strategyId)
+            buySignals.map((s) => s.strategyId)
         );
 
         // ── Consensus strength factor ──
@@ -138,6 +177,7 @@ export class MetaAllocatorAgent extends BaseAgent {
         return {
             shouldTrade,
             side,
+            direction: 'BUY',
             aggregateConfidence,
             positionSizeUsd: shouldTrade ? avgSizeUsd : 0,
             reasoning,
@@ -291,17 +331,18 @@ export class MetaAllocatorAgent extends BaseAgent {
         const voteDetails = votes
             .map(
                 (v) =>
-                    `${v.strategyName}: ${v.signal.side} @ ${v.signal.confidence.toFixed(2)} (w=${v.weight.toFixed(2)})`
+                    `${v.strategyName}: ${v.signal.side} @${v.signal.confidence.toFixed(2)} (w = ${v.weight.toFixed(2)})`
             )
             .join(', ');
 
-        return `Consensus: ${side} with ${(confidence * 100).toFixed(1)}% confidence (gap=${(gap * 100).toFixed(1)}%). Votes: ${voteDetails}`;
+        return `Consensus: ${side} with ${(confidence * 100).toFixed(1)}% confidence(gap = ${(gap * 100).toFixed(1)}%).Votes: ${voteDetails} `;
     }
 
     private noTradeConsensus(): ConsensusResult {
         return {
             shouldTrade: false,
             side: 'YES',
+            direction: 'BUY',
             aggregateConfidence: 0,
             positionSizeUsd: 0,
             reasoning: 'No agent signals received.',

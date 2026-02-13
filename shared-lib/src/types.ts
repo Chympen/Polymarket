@@ -57,6 +57,7 @@ export interface PortfolioState {
     maxDrawdown: number;
     killSwitchActive: boolean;
     capitalPreservation: boolean;
+    realizedPnl?: number;
     positions: PositionState[];
 }
 
@@ -161,11 +162,12 @@ export interface StrategyVote {
 export interface ConsensusResult {
     shouldTrade: boolean;
     side: 'YES' | 'NO';
+    direction: 'BUY' | 'SELL';
     aggregateConfidence: number;
     positionSizeUsd: number;
     reasoning: string;
     votes: StrategyVote[];
-    consensusMethod: 'WEIGHTED_AVERAGE' | 'MAJORITY' | 'UNANIMOUS';
+    consensusMethod: 'WEIGHTED_AVERAGE' | 'MAJORITY' | 'UNANIMOUS' | 'PRIORITY_OVERRIDE';
 }
 
 // ── Performance Metrics ──

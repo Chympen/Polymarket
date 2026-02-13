@@ -21,7 +21,8 @@ async function safeFetch(url: string, options?: RequestInit) {
         const res = await fetch(url, { ...options, headers: headers(), signal: AbortSignal.timeout(8000) });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return await res.json();
-    } catch {
+    } catch (error) {
+        console.error(`API Error (${url}):`, (error as Error).message);
         return null;
     }
 }
@@ -36,6 +37,8 @@ export const agentApi = {
     // Control
     status: () => safeFetch(`${AGENT_URL}/status`),
     toggle: () => safeFetch(`${AGENT_URL}/toggle`, { method: 'POST' }),
+    toggleMode: () => safeFetch(`${AGENT_URL}/toggle-mode`, { method: 'POST' }),
+    getPaperPortfolio: () => safeFetch(`${AGENT_URL}/paper-portfolio`),
 };
 
 // ── Risk Guardian ──

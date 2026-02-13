@@ -2,7 +2,7 @@ import { getDatabase } from './database';
 import { logger } from './logger';
 
 export type ActivityLevel = 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR' | 'TRADE';
-export type ActivityType = 'SYSTEM' | 'ANALYSIS' | 'RISK' | 'EXECUTION';
+export type ActivityType = 'SYSTEM' | 'ANALYSIS' | 'RISK' | 'EXECUTION' | 'PAPER';
 
 export async function logActivity(
     level: ActivityLevel,

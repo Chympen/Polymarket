@@ -1,64 +1,96 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
-import { executorApi } from '@/lib/api';
+import { executorApi, agentApi } from '@/lib/api';
 
 export const dynamic = 'force-dynamic';
 
 export async function GET() {
     try {
-        // Fetch DB data and Wallat Balance in parallel
-        const [portfolio, positions, walletData] = await Promise.all([
-            prisma.portfolio.findFirst({ orderBy: { createdAt: 'desc' } }),
-            prisma.position.findMany({ where: { status: 'OPEN' }, include: { market: true } }),
-            executorApi.wallet(),
-        ]);
-
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
-        const [todayTrades, totalTrades, recentActivity] = await Promise.all([
+        // 1. Fetch fast DB data & Agent Status in parallel
+        const [portfolio, positions, todayTrades, totalTrades, recentActivity, agentStatus] = await Promise.all([
+            prisma.portfolio.findFirst({ orderBy: { createdAt: 'desc' } }),
+            prisma.position.findMany({ where: { status: 'OPEN' }, include: { market: true } }),
             prisma.trade.count({ where: { createdAt: { gte: todayStart } } }),
             prisma.trade.count(),
-            prisma.activityLog.findMany({
-                orderBy: { createdAt: 'desc' },
-                take: 10,
-            }),
+            prisma.activityLog.findMany({ orderBy: { createdAt: 'desc' }, take: 10 }),
+            agentApi.status().catch(() => null), // Graceful fallback
         ]);
 
-        // Use real wallet balance if available
-        let displayPortfolio = portfolio || {
-            totalCapital: 0,
-            availableCapital: 0,
-            deployedCapital: 0,
-            totalPnl: 0,
-            dailyPnl: 0,
-            dailyPnlPercent: 0,
-            highWaterMark: 0,
-            maxDrawdown: 0,
-            killSwitchActive: false,
-            capitalPreservation: false,
-        };
+        const isPaper = agentStatus?.paper || false;
 
-        if (walletData && walletData.usdcBalance) {
-            const realUsdc = parseFloat(walletData.usdcBalance);
-            // Assuming deployed capital is calculated from open positions
-            const deployed = positions.reduce((sum, p) => sum + p.sizeUsd, 0);
+        // 2. Determine Portfolio Source (Paper vs Live)
+        let displayPortfolio;
+        let positionsList = [];
+        let walletInfo = null;
 
-            displayPortfolio = {
-                ...displayPortfolio,
-                availableCapital: realUsdc,
-                totalCapital: realUsdc + deployed,
-                deployedCapital: deployed,
+        if (isPaper) {
+            // 📝 PAPER MODE: Fetch from Agent Memory
+            // console.log('📝 fetching paper portfolio...');
+            const paperData = await agentApi.getPaperPortfolio();
+
+            if (paperData) {
+                displayPortfolio = paperData;
+                positionsList = paperData.positions || [];
+                // Mock wallet response for frontend consistency
+                walletInfo = {
+                    polBalance: "0",
+                    usdcBalance: (paperData.availableCapital * 1000000).toString(),
+                    nativeUsdcBalance: "0"
+                };
+            }
+        } else {
+            // 🔌 LIVE MODE: Fetch Wallet Balance (RPC Call)
+            // Only fetch real wallet if we are NOT in paper mode
+            // console.log('🔌 fetching live portfolio...');
+            const walletData = await executorApi.wallet().catch(() => null);
+            walletInfo = walletData;
+
+            let dbPortfolio = portfolio || {
+                totalCapital: 0,
+                availableCapital: 0,
+                deployedCapital: 0,
+                totalPnl: 0,
+                dailyPnl: 0,
+                dailyPnlPercent: 0,
+                highWaterMark: 0,
+                maxDrawdown: 0,
+                killSwitchActive: false,
+                capitalPreservation: false,
             };
+
+            if (walletData) {
+                // USDC has 6 decimals
+                const realUsdc = parseFloat(walletData.usdcBalance || '0') / 1_000_000;
+                const nativeUsdc = parseFloat(walletData.nativeUsdcBalance || '0');
+
+                if (nativeUsdc > 0 && realUsdc === 0) {
+                    console.log('🚨 WRONG USDC DETECTED! You have Native USDC.');
+                }
+
+                const deployed = positions.reduce((sum, p) => sum + p.sizeUsd, 0);
+
+                dbPortfolio = {
+                    ...dbPortfolio,
+                    availableCapital: realUsdc,
+                    totalCapital: realUsdc + deployed,
+                    deployedCapital: deployed,
+                };
+            }
+
+            displayPortfolio = dbPortfolio;
+            positionsList = positions;
         }
 
         return NextResponse.json({
             portfolio: displayPortfolio,
-            positions,
+            positions: positionsList,
             todayTrades,
             totalTrades,
             recentActivity,
-            wallet: walletData, // Pass full wallet data (including MATIC) if needed by frontend
+            wallet: walletInfo,
         });
     } catch (error) {
         console.error('Portfolio fetch error:', error);

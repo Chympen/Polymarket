@@ -41,9 +41,15 @@ if grep -q "TUNNEL_TOKEN=" .env && ! grep -q "TUNNEL_TOKEN=." .env; then
     fi
 fi
 
+echo "🧹 Cleaning up potential conflicting containers..."
+docker rm -f ollama cloudflared 2>/dev/null || true
+# Stop legacy 'docker' project containers if they exist
+cd docker && docker compose -p docker down 2>/dev/null || true
+cd ..
+
 echo "📦 Building and starting services..."
 cd docker
-docker compose -p "Polymarket Trader" -f docker-compose.local.yml up -d --build
+docker compose -p "polymarket-trader" -f docker-compose.local.yml up -d --build
 
 
 if [ $? -ne 0 ]; then
@@ -64,4 +70,4 @@ echo "   - Trade Executor: http://localhost:3003"
 echo "   - Ollama: http://localhost:11434"
 echo ""
 echo "   To view logs:"
-echo "   cd docker && docker compose -p "Polymarket Trader" -f docker-compose.local.yml logs -f"
+echo "   cd docker && docker compose -p "polymarket-trader" -f docker-compose.local.yml logs -f"

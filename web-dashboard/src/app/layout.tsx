@@ -1,5 +1,6 @@
 'use client';
 
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import './globals.css';
@@ -43,6 +44,33 @@ const navItems = [
 
 function Sidebar() {
   const pathname = usePathname();
+  const [mode, setMode] = useState('CONNECTING...');
+  const [isLive, setIsLive] = useState(false);
+
+  useEffect(() => {
+    async function fetchStatus() {
+      try {
+        const res = await fetch('/api/control');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.paper) {
+            setMode('PAPER TRADING');
+            setIsLive(false);
+          } else {
+            setMode('LIVE TRADING');
+            setIsLive(true);
+          }
+        }
+      } catch {
+        setMode('OFFLINE');
+        setIsLive(false);
+      }
+    }
+
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 5000); // Poll status
+    return () => clearInterval(interval);
+  }, []);
 
   return (
     <aside className="sidebar">
@@ -51,9 +79,14 @@ function Sidebar() {
           <div className="sidebar-logo-icon">⚡</div>
           <h1>OpenClaw</h1>
         </div>
-        <div className="sidebar-mode">
-          <span className="sidebar-mode-dot"></span>
-          Simulation Mode
+        <div className="sidebar-mode" style={{
+          color: isLive ? 'var(--color-success)' : '#3b82f6',
+          borderColor: isLive ? 'var(--color-success)' : '#3b82f6'
+        }}>
+          <span className="sidebar-mode-dot" style={{
+            backgroundColor: isLive ? 'var(--color-success)' : '#3b82f6'
+          }}></span>
+          {mode}
         </div>
       </div>
       <nav className="sidebar-nav">

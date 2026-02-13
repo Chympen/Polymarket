@@ -47,7 +47,7 @@ async function main(): Promise<void> {
     });
 
     // ── Auth middleware for trade endpoints ──
-    const auth = serviceAuthMiddleware(['risk-guardian-service', 'openclaw-agent-service']);
+    const auth = serviceAuthMiddleware(['risk-guardian-service', 'openclaw-agent-service', 'admin']) as any;
 
     // ── Execute Trade ──
     app.post('/execute-trade', auth, async (req, res) => {
@@ -101,19 +101,39 @@ async function main(): Promise<void> {
     });
 
     // ── Get Wallet Info ──
+    let walletCache: any = null;
+    let walletCacheTime = 0;
+
     app.get('/wallet', auth, async (_req, res) => {
         try {
+            const now = Date.now();
+            if (walletCache && now - walletCacheTime < 10000) { // 10s cache
+                res.json(walletCache);
+                return;
+            }
+
             const address = walletService.getAddress();
             const balance = await walletService.getBalance();
             const usdcBalance = await rpcService.getUsdcBalance(address);
+            const nativeUsdcBalance = await rpcService.getNativeUsdcBalance(address);
 
-            res.json({
+            walletCache = {
                 address,
                 maticBalance: balance.toString(),
-                usdcBalance: usdcBalance.toString(),
-            });
+                usdcBalance: usdcBalance.toString(), // Bridged (USDC.e)
+                nativeUsdcBalance: nativeUsdcBalance.toString(), // Native (USDC)
+            };
+            walletCacheTime = now;
+
+            res.json(walletCache);
         } catch (error) {
-            res.status(500).json({ error: (error as Error).message });
+            log.error({ error: (error as Error).message }, 'Failed to fetch wallet info');
+            // Return cached data if available, even if expired, to prevent UI crash
+            if (walletCache) {
+                res.json(walletCache);
+            } else {
+                res.status(500).json({ error: (error as Error).message });
+            }
         }
     });
 

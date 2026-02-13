@@ -41,6 +41,7 @@ export default function DashboardPage() {
   const [positionCount, setPositionCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [botActive, setBotActive] = useState(false); // Default off
+  const [isPaper, setIsPaper] = useState(false);
 
   useEffect(() => {
     async function fetchData() {
@@ -59,6 +60,7 @@ export default function DashboardPage() {
         if (controlRes.ok) {
           const controlData = await controlRes.json();
           setBotActive(controlData?.active || false);
+          setIsPaper(controlData?.paper || false);
         }
 
         if (portfolioRes.ok) {
@@ -68,16 +70,16 @@ export default function DashboardPage() {
           setTodayTrades(pData.todayTrades || 0);
           setTotalTrades(pData.totalTrades || 0);
           setPositionCount(pData.positions?.length || 0);
+          setLoading(false);
         }
       } catch (e) {
         console.error('Dashboard fetch error:', e);
-      } finally {
         setLoading(false);
       }
     }
 
     fetchData();
-    const interval = setInterval(fetchData, 15000);
+    const interval = setInterval(fetchData, 5000); // Faster refresh for UI responsiveness
     return () => clearInterval(interval);
   }, []);
 
@@ -90,6 +92,23 @@ export default function DashboardPage() {
       }
     } catch (error) {
       console.error('Failed to toggle bot:', error);
+    }
+  }
+
+  async function toggleMode() {
+    try {
+      const res = await fetch('/api/control', {
+        method: 'POST',
+        body: JSON.stringify({ action: 'toggleMode' })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data) {
+          setIsPaper(data.paper);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to toggle mode:', error);
     }
   }
 
@@ -122,7 +141,7 @@ export default function DashboardPage() {
       <div>
         <div className="page-header">
           <h1>Dashboard</h1>
-          <p>System overview and real-time status</p>
+          <div className="skeleton" style={{ height: 36, width: 120 }} />
         </div>
         <div className="grid-4">
           {[1, 2, 3, 4].map(i => (
@@ -138,31 +157,66 @@ export default function DashboardPage() {
 
   return (
     <div>
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      {/* Header with Controls */}
+      <div className="page-header" style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        borderBottom: isPaper ? '4px solid #3b82f6' : '4px solid #22c55e',
+        paddingBottom: 16
+      }}>
         <div>
-          <h1>Dashboard</h1>
-          <p>System overview and real-time status — auto-refreshes every 15s</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <h1>Dashboard</h1>
+            {isPaper && <span className="badge badge-info" style={{ fontSize: '0.9rem' }}>PAPER TRADING MODE</span>}
+          </div>
+          <p>System overview and real-time status — auto-refreshes every 5s</p>
         </div>
-        <button
-          onClick={toggleBot}
-          style={{
-            backgroundColor: botActive ? 'var(--color-danger)' : 'var(--color-success)',
-            color: 'white',
-            border: 'none',
-            padding: '12px 24px',
-            borderRadius: '8px',
-            fontSize: '1rem',
-            fontWeight: '600',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            transition: 'all 0.2s ease',
-          }}
-        >
-          <span style={{ fontSize: '1.2rem' }}>{botActive ? '🛑' : '🚀'}</span>
-          {botActive ? 'STOP BOT' : 'START BOT'}
-        </button>
+
+        <div style={{ display: 'flex', gap: 12 }}>
+          <button
+            onClick={toggleMode}
+            style={{
+              backgroundColor: isPaper ? '#3b82f6' : '#64748b',
+              color: 'white',
+              border: 'none',
+              padding: '12px 18px',
+              borderRadius: '8px',
+              fontSize: '0.9rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.2s ease',
+            }}
+          >
+            <span>{isPaper ? '📝' : '🔌'}</span>
+            {isPaper ? 'SWITCH TO LIVE' : 'SWITCH TO PAPER'}
+          </button>
+
+          <button
+            onClick={toggleBot}
+            style={{
+              backgroundColor: botActive ? 'var(--color-danger)' : 'var(--color-success)',
+              color: 'white',
+              border: 'none',
+              padding: '12px 24px',
+              borderRadius: '8px',
+              fontSize: '1rem',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              transition: 'all 0.2s ease',
+              opacity: isPaper ? 0.9 : 1
+            }}
+          >
+            <span style={{ fontSize: '1.2rem' }}>{botActive ? '🛑' : '🚀'}</span>
+            {botActive ? 'STOP BOT' : 'START BOT'}
+          </button>
+        </div>
       </div>
 
       {/* Service Health */}
