@@ -94,8 +94,23 @@ export async function GET() {
         });
     } catch (error) {
         console.error('Portfolio fetch error:', error);
+
+        // Diagnostic info for Amplify/Cloud environments
+        const diagnosticInfo = {
+            hasDbUrl: !!process.env.DATABASE_URL,
+            dbUrlLength: process.env.DATABASE_URL?.length || 0,
+            nodeEnv: process.env.NODE_ENV,
+            agentUrl: process.env.AGENT_SERVICE_URL,
+            error: (error as Error).message,
+            stack: (error as Error).stack,
+        };
+
         return NextResponse.json(
-            { error: 'Failed to fetch portfolio data', details: (error as Error).message },
+            {
+                error: 'Failed to fetch portfolio data',
+                message: (error as Error).message,
+                diagnostics: diagnosticInfo
+            },
             { status: 500 }
         );
     }

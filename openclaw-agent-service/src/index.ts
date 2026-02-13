@@ -30,7 +30,7 @@ import { SentimentAgent } from './agents/sentiment.agent';
 import { PortfolioOptimizationAgent } from './agents/portfolio-optimization.agent';
 import { MetaAllocatorAgent } from './agents/meta-allocator.agent';
 import { BaseAgent } from './agents/base.agent';
-// import { DecisionEngine } from './engine/decision-engine';
+import { DecisionEngine } from './engine/decision-engine';
 import { SimulationEngine } from './simulation/simulation-engine';
 import { PerformanceTracker } from './analytics/performance-tracker';
 import { RegimeDetector } from './services/regime-detector.service';
@@ -44,6 +44,7 @@ const log = logger.child({ module: 'AgentServiceMain' });
 // ── Service State (Initialized in main) ──
 let agents: BaseAgent[] = [];
 let metaAllocator: MetaAllocatorAgent;
+let decisionEngine: DecisionEngine;
 let simulationEngine: SimulationEngine;
 let performanceTracker: PerformanceTracker;
 let regimeDetector: RegimeDetector;
@@ -111,7 +112,7 @@ function initializeServices() {
     ];
 
     metaAllocator = new MetaAllocatorAgent();
-    // decisionEngine initialized implicitly inside agents or unused
+    decisionEngine = new DecisionEngine();
     simulationEngine = new SimulationEngine();
     performanceTracker = new PerformanceTracker();
     regimeDetector = new RegimeDetector();
@@ -223,6 +224,39 @@ async function runTradingCycle(): Promise<void> {
                     processedMarketSummaries.push({ question: market.question, signals: signals.length, traded: false, outcome: 'no_consensus' });
                     continue;
                 }
+
+                // ── AI Decision Engine with Memory ──
+                // If the math consensus says "Go", let the AI double check it AND potentially learn from memory
+                await logActivity('INFO', 'ANALYSIS', `🤖 Asking AI Brain about "${market.question.slice(0, 50)}..."`, {
+                    consensusSide: consensus.side
+                });
+
+                const aiDecision = await decisionEngine.analyze({
+                    marketSnapshot: market,
+                    recentPriceAction: market.priceHistory,
+                    portfolioState: portfolio,
+                    externalSignals: [],
+                    strategyContext: {
+                        strategyId: 'meta-allocator',
+                        strategyName: 'Meta Consensus',
+                        historicalAccuracy: 0.6,
+                        currentWeight: 1.0,
+                        recentPerformance: 0 // Dummy value, likely avg return or similar
+                    }
+                });
+
+                if (!aiDecision.trade || aiDecision.side !== consensus.side) {
+                    log.info({ aiReason: aiDecision.reasoning }, '🤖 AI Vetoed the trade or changed side');
+                    processedMarketSummaries.push({ question: market.question, signals: signals.length, traded: false, outcome: 'ai_veto' });
+                    continue;
+                }
+
+                // Use AI confidence if higher/better? For now, stick to consensus but maybe average them
+                // const finalConfidence = (consensus.aggregateConfidence + aiDecision.confidence) / 2;
+
+                // Update consensus reasoning with AI reasoning
+                consensus.reasoning = `[AI Brain]: ${aiDecision.reasoning} | [Math]: ${consensus.reasoning}`;
+
 
                 await logActivity('INFO', 'ANALYSIS', `Found trade consensus for "${market.question.slice(0, 50)}..."`, {
                     side: consensus.side,
@@ -455,19 +489,25 @@ async function fetchActiveMarkets(): Promise<MarketSnapshot[]> {
             timeout: 15_000,
         });
 
-        return response.data.map((m: any, i: number) => ({
-            conditionId: String(m.conditionId || m.condition_id || ''),
-            questionId: String(m.questionId || m.question_id || ''),
-            question: String(m.question || ''),
-            priceYes: Number(m.outcomePrices?.[0] || m.bestBid || 0.5),
-            priceNo: Number(m.outcomePrices?.[1] || 1 - Number(m.bestBid || 0.5)),
-            volume24h: Number(m.volume24hr || m.volume || 0),
-            liquidity: Number(m.liquidity || 0),
-            endDate: m.endDate ? String(m.endDate) : null,
-            spread: Number(m.spread || 0),
-            priceHistory: generateSyntheticHistory(Number(m.outcomePrices?.[0] || m.bestBid || 0.5), i),
-            orderBookDepth: [],
-        }));
+        return response.data.map((m: any, i: number) => {
+            const prices = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices) : m.outcomePrices;
+            const priceYes = Number(prices?.[0] || m.bestBid || 0.5);
+            const priceNo = Number(prices?.[1] || 1 - priceYes);
+
+            return {
+                conditionId: String(m.conditionId || m.condition_id || ''),
+                questionId: String(m.questionId || m.question_id || ''),
+                question: String(m.question || ''),
+                priceYes,
+                priceNo,
+                volume24h: Number(m.volume24hr || m.volume || 0),
+                liquidity: Number(m.liquidity || 0),
+                endDate: m.endDate ? String(m.endDate) : null,
+                spread: Number(m.spread || 0),
+                priceHistory: [],
+                orderBookDepth: [],
+            };
+        });
     } catch (error) {
         log.error({ error: (error as Error).message }, 'Failed to fetch markets');
         return [];
@@ -748,6 +788,16 @@ async function main(): Promise<void> {
         log.info('⏰ Scheduled trading cycle triggered');
         runTradingCycle().catch((err) =>
             log.error({ error: err.message }, 'Scheduled trading cycle failed')
+        );
+    });
+
+    // ── Schedule Post-Mortem Analysis (Every Hour) ──
+    cron.schedule('0 * * * *', () => {
+        log.info('💀 Starting Post-Mortem Analysis...');
+        postMortemService.analyzeRecentLosses().then((count) => {
+            if (count > 0) log.info({ count }, '💀 Post-Mortem complete: New lessons learned');
+        }).catch((err) =>
+            log.error({ error: err.message }, 'Post-Mortem Analysis failed')
         );
     });
 

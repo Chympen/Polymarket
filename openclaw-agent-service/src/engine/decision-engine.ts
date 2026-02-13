@@ -7,6 +7,8 @@ import {
     AIDecisionOutput,
 } from 'shared-lib';
 
+import { MemoryService } from '../services/memory.service';
+
 /**
  * LLM Decision Engine — AI-powered trading brain.
  *
@@ -16,11 +18,13 @@ import {
  *  - JSON output parsing
  *  - Confidence gating
  *  - Decision logging with latency tracking
+ *  - Memory injection (RAG) for learning from past mistakes
  */
 export class DecisionEngine {
     private readonly log = logger.child({ module: 'DecisionEngine' });
     private readonly db = getDatabase();
     private openai: OpenAI | null = null;
+    private memory: MemoryService;
 
     constructor() {
         const config = getConfig();
@@ -30,6 +34,7 @@ export class DecisionEngine {
                 baseURL: config.LLM_BASE_URL,
             });
         }
+        this.memory = new MemoryService();
     }
 
     /**
@@ -38,8 +43,14 @@ export class DecisionEngine {
     async analyze(input: AIDecisionInput): Promise<AIDecisionOutput> {
         const config = getConfig();
 
-        // Build the prompt
-        const prompt = this.buildPrompt(input);
+        // Retrieve long-term memory / corruption notes
+        const memoryContext = await this.memory.buildMemoryContext(
+            input.marketSnapshot.question,
+            input.strategyContext.strategyId
+        );
+
+        // Build the prompt with memory injection
+        const prompt = this.buildPrompt(input, memoryContext);
 
         // If no LLM configured, use fallback heuristic
         if (!this.openai) {
@@ -86,6 +97,7 @@ export class DecisionEngine {
                     side: decision.side,
                     confidence: decision.confidence.toFixed(3),
                     latencyMs,
+                    memoryUsed: !!memoryContext
                 },
                 'LLM decision made'
             );
@@ -122,7 +134,8 @@ Decision framework:
 3. ASSESS volume and liquidity for execution feasibility
 4. CONSIDER external signals (news, sentiment) for information edge
 5. EXAMINE portfolio state for concentration risk
-6. DECIDE whether to trade, which side, and with what confidence
+6. CONSULT MEMORY (past similar trades/mistakes) to avoid repeating errors
+7. DECIDE whether to trade, which side, and with what confidence
 
 Key rules:
 - Only trade when you have a clear edge (confidence > 0.55)
@@ -137,7 +150,7 @@ Key rules:
     /**
      * Build the analysis prompt from input data.
      */
-    private buildPrompt(input: AIDecisionInput): string {
+    private buildPrompt(input: AIDecisionInput, memoryContext: string): string {
         const { marketSnapshot, recentPriceAction, portfolioState, externalSignals, strategyContext } = input;
 
         let prompt = `## Market Analysis Request
@@ -189,7 +202,16 @@ Key rules:
 - Strategy: ${strategyContext.strategyName}
 - Historical Accuracy: ${(strategyContext.historicalAccuracy * 100).toFixed(1)}%
 - Current Weight: ${strategyContext.currentWeight.toFixed(2)}
+`;
 
+        // Add injected memory context
+        if (memoryContext) {
+            prompt += `
+${memoryContext}
+`;
+        }
+
+        prompt += `
 Provide your trading decision as JSON.`;
 
         return prompt;

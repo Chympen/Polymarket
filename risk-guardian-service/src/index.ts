@@ -40,7 +40,7 @@ async function main(): Promise<void> {
     const monteCarloService = new MonteCarloService();
 
     // Auth: only agent service can request risk checks
-    const auth = serviceAuthMiddleware(['openclaw-agent-service']);
+    const auth: express.RequestHandler = serviceAuthMiddleware(['openclaw-agent-service']);
     // Admin auth for kill-switch operations
     const adminAuth = serviceAuthMiddleware(['openclaw-agent-service', 'admin']);
 
