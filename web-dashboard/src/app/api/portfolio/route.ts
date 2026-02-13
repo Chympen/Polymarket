@@ -10,46 +10,52 @@ export async function GET() {
         const todayStart = new Date();
         todayStart.setHours(0, 0, 0, 0);
 
-        // 1. Fetch fast DB data & Agent Status in parallel
-        const [portfolio, positions, todayTrades, totalTrades, recentActivity, agentStatus] = await Promise.all([
-            prisma.portfolio.findFirst({ orderBy: { createdAt: 'desc' } }),
-            prisma.position.findMany({ where: { status: 'OPEN' }, include: { market: true } }),
-            prisma.trade.count({ where: { createdAt: { gte: todayStart } } }),
-            prisma.trade.count(),
+        // 1. Fetch Agent Status & Recent Activity in parallel
+        const [agentStatus, recentActivity] = await Promise.all([
+            agentApi.status().catch(() => null),
             prisma.activityLog.findMany({ orderBy: { createdAt: 'desc' }, take: 10 }),
-            agentApi.status().catch(() => null), // Graceful fallback
         ]);
 
         const isPaper = agentStatus?.paper || false;
 
-        // 2. Determine Portfolio Source (Paper vs Live)
+        // 2. Fetch statistics filtered by Paper/Live mode
+        const [modePortfolio, modePositions, modeTodayTrades, modeTotalTrades] = await Promise.all([
+            prisma.portfolio.findFirst({ where: { isPaper }, orderBy: { createdAt: 'desc' } }),
+            prisma.position.findMany({ where: { status: 'OPEN', isPaper }, include: { market: true } }),
+            prisma.trade.count({ where: { isPaper, createdAt: { gte: todayStart } } }),
+            prisma.trade.count({ where: { isPaper } }),
+        ]);
+
         let displayPortfolio;
         let positionsList = [];
         let walletInfo = null;
 
         if (isPaper) {
-            // 📝 PAPER MODE: Fetch from Agent Memory
-            // console.log('📝 fetching paper portfolio...');
-            const paperData = await agentApi.getPaperPortfolio();
-
-            if (paperData) {
-                displayPortfolio = paperData;
-                positionsList = paperData.positions || [];
-                // Mock wallet response for frontend consistency
-                walletInfo = {
-                    polBalance: "0",
-                    usdcBalance: (paperData.availableCapital * 1000000).toString(),
-                    nativeUsdcBalance: "0"
-                };
-            }
+            // 📝 PAPER MODE: Use Database Snapshots
+            displayPortfolio = modePortfolio || {
+                totalCapital: 1000000,
+                availableCapital: 1000000,
+                deployedCapital: 0,
+                totalPnl: 0,
+                dailyPnl: 0,
+                dailyPnlPercent: 0,
+                highWaterMark: 1000000,
+                maxDrawdown: 0,
+                killSwitchActive: false,
+                capitalPreservation: false,
+            };
+            positionsList = modePositions;
+            walletInfo = {
+                polBalance: "0",
+                usdcBalance: (displayPortfolio.availableCapital * 1000000).toString(),
+                nativeUsdcBalance: "0"
+            };
         } else {
             // 🔌 LIVE MODE: Fetch Wallet Balance (RPC Call)
-            // Only fetch real wallet if we are NOT in paper mode
-            // console.log('🔌 fetching live portfolio...');
             const walletData = await executorApi.wallet().catch(() => null);
             walletInfo = walletData;
 
-            let dbPortfolio = portfolio || {
+            let dbPortfolio = modePortfolio || {
                 totalCapital: 0,
                 availableCapital: 0,
                 deployedCapital: 0,
@@ -63,15 +69,8 @@ export async function GET() {
             };
 
             if (walletData) {
-                // USDC has 6 decimals
                 const realUsdc = parseFloat(walletData.usdcBalance || '0') / 1_000_000;
-                const nativeUsdc = parseFloat(walletData.nativeUsdcBalance || '0');
-
-                if (nativeUsdc > 0 && realUsdc === 0) {
-                    console.log('🚨 WRONG USDC DETECTED! You have Native USDC.');
-                }
-
-                const deployed = positions.reduce((sum, p) => sum + p.sizeUsd, 0);
+                const deployed = modePositions.reduce((sum: number, p: any) => sum + p.sizeUsd, 0);
 
                 dbPortfolio = {
                     ...dbPortfolio,
@@ -82,14 +81,14 @@ export async function GET() {
             }
 
             displayPortfolio = dbPortfolio;
-            positionsList = positions;
+            positionsList = modePositions;
         }
 
         return successResponse({
             portfolio: displayPortfolio,
             positions: positionsList,
-            todayTrades,
-            totalTrades,
+            todayTrades: modeTodayTrades,
+            totalTrades: modeTotalTrades,
             recentActivity,
             wallet: walletInfo,
         });

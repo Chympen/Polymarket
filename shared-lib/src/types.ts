@@ -62,6 +62,7 @@ export interface PortfolioState {
 }
 
 export interface PositionState {
+    id: string;
     marketId: string;
     conditionId: string;
     side: 'YES' | 'NO';
@@ -70,6 +71,7 @@ export interface PositionState {
     currentPrice: number;
     unrealizedPnl: number;
     realizedPnl: number;
+    createdAt: string;
 }
 
 // ── Risk Check ──

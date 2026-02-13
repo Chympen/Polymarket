@@ -6,13 +6,11 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(req: NextRequest) {
     try {
-        const searchParams = req.nextUrl.searchParams;
-        const status = searchParams.get('status');
-        const strategy = searchParams.get('strategy');
-        const limit = parseInt(searchParams.get('limit') || '50');
-        const offset = parseInt(searchParams.get('offset') || '0');
+        // Check Agent Status for Mode filtering
+        const agentStatus = await agentApi.status().catch(() => null);
+        const isPaperMode = agentStatus?.paper || false;
 
-        const where: Record<string, unknown> = {};
+        const where: Record<string, unknown> = { isPaper: isPaperMode };
         if (status) where.status = status;
         if (strategy) where.strategyId = strategy;
 

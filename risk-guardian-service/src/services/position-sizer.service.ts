@@ -48,6 +48,20 @@ export class PositionSizer {
         const rejectionReasons: string[] = [];
         const warnings: string[] = [];
 
+        // ── Load Dynamic Budget Config ──
+        const budgetConfig = await this.db.budgetConfig.findFirst();
+        const config = budgetConfig || {
+            maxTradeSize: 50,
+            maxTotalTradeSpend: 1000,
+            aiSpendingPaused: false
+        };
+
+        // ── Check 0: Budget Pause ──
+        if (config.aiSpendingPaused) {
+            rejectionReasons.push('BUDGET_PAUSED: AI spending and trading is paused in Budget Manager');
+            return this.buildResult(false, 0, rejectionReasons, warnings, signal, portfolio);
+        }
+
         // ── Check 1: Kill switch ──
         if (portfolio.killSwitchActive) {
             rejectionReasons.push('KILL_SWITCH_ACTIVE: All trading halted');
@@ -61,14 +75,35 @@ export class PositionSizer {
             );
         }
 
-        // ── Check 3: Max trade size (2% of bankroll) ──
-        const maxTradeSize = portfolio.totalCapital * RISK_LIMITS.MAX_TRADE_SIZE_PERCENT;
-        let adjustedSize = Math.min(signal.positionSizeUsd, maxTradeSize);
+        // ── Check 3: Max trade size (Dynamic vs Hardcoded Safety) ──
+        const hardcodedMax = portfolio.totalCapital * RISK_LIMITS.MAX_TRADE_SIZE_PERCENT;
+        const userMax = config.maxTradeSize;
+        const effectiveMax = Math.min(hardcodedMax, userMax);
 
-        if (signal.positionSizeUsd > maxTradeSize) {
+        let adjustedSize = Math.min(signal.positionSizeUsd, effectiveMax);
+
+        if (signal.positionSizeUsd > effectiveMax) {
+            const reason = signal.positionSizeUsd > userMax ? 'budget limit' : '2% safety limit';
             warnings.push(
-                `TRADE_SIZE_CAPPED: ${signal.positionSizeUsd.toFixed(2)} -> ${maxTradeSize.toFixed(2)} (2% limit)`
+                `TRADE_SIZE_CAPPED: ${signal.positionSizeUsd.toFixed(2)} -> ${effectiveMax.toFixed(2)} (${reason})`
             );
+        }
+
+        // ── Check 3.5: Total Trade Spend Limit ──
+        const totalSpendAgg = await this.db.trade.aggregate({
+            where: { status: 'FILLED' },
+            _sum: { sizeUsd: true }
+        });
+        const currentTotalSpend = totalSpendAgg._sum.sizeUsd || 0;
+
+        if (currentTotalSpend + adjustedSize > config.maxTotalTradeSpend) {
+            const availableSpend = Math.max(0, config.maxTotalTradeSpend - currentTotalSpend);
+            if (availableSpend < 1.0) {
+                rejectionReasons.push(`TOTAL_SPEND_LIMIT_REACHED: $${currentTotalSpend.toFixed(2)} >= $${config.maxTotalTradeSpend.toFixed(2)}`);
+            } else {
+                adjustedSize = availableSpend;
+                warnings.push(`SIZE_REDUCED_FOR_TOTAL_BUDGET: capped to $${adjustedSize.toFixed(2)} remaining`);
+            }
         }
 
         // ── Check 4: Market exposure (10% max) ──

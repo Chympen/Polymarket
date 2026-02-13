@@ -52,6 +52,52 @@ export class DecisionEngine {
         // Build the prompt with memory injection
         const prompt = this.buildPrompt(input, memoryContext);
 
+        // ── Load Dynamic Budget Config ──
+        const budgetConfig = await this.db.budgetConfig.findFirst();
+        const budget = budgetConfig || {
+            maxDailyAiSpend: 10,
+            maxMonthlyAiSpend: 200,
+            aiSpendingPaused: false
+        };
+
+        // ── Check 0: Budget Pause ──
+        if (budget.aiSpendingPaused) {
+            this.log.info('AI spending is paused — using heuristic fallback');
+            return this.heuristicFallback(input);
+        }
+
+        // ── Check 1: Daily/Monthly Spending Limits ──
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        const monthStart = new Date();
+        monthStart.setDate(1);
+        monthStart.setHours(0, 0, 0, 0);
+
+        const [dailyCosts, monthlyCosts] = await Promise.all([
+            this.db.aiCostLog.aggregate({
+                where: { createdAt: { gte: todayStart } },
+                _sum: { costUsd: true }
+            }),
+            this.db.aiCostLog.aggregate({
+                where: { createdAt: { gte: monthStart } },
+                _sum: { costUsd: true }
+            })
+        ]);
+
+        const dailySpend = dailyCosts._sum.costUsd || 0;
+        const monthlySpend = monthlyCosts._sum.costUsd || 0;
+
+        if (dailySpend >= budget.maxDailyAiSpend) {
+            this.log.warn({ dailySpend, limit: budget.maxDailyAiSpend }, 'Daily AI budget limit reached — falling back to heuristic');
+            return this.heuristicFallback(input);
+        }
+
+        if (monthlySpend >= budget.maxMonthlyAiSpend) {
+            this.log.warn({ monthlySpend, limit: budget.maxMonthlyAiSpend }, 'Monthly AI budget limit reached — falling back to heuristic');
+            return this.heuristicFallback(input);
+        }
+
         // If no LLM configured, use fallback heuristic
         if (!this.openai) {
             this.log.warn('No LLM configured — using heuristic fallback');
@@ -86,6 +132,29 @@ export class DecisionEngine {
             }
 
             const decision = this.parseDecision(content);
+
+            // ── Calculate and Log AI Cost ──
+            const usage = response.usage;
+            let costUsd = 0;
+            if (usage) {
+                // Approximate cost for GPT-4o (adjust based on model if needed)
+                // $5.00 / 1M input tokens, $15.00 / 1M output tokens
+                const inputCost = (usage.prompt_tokens / 1_000_000) * 5.0;
+                const outputCost = (usage.completion_tokens / 1_000_000) * 15.0;
+                costUsd = inputCost + outputCost;
+
+                await this.db.aiCostLog.create({
+                    data: {
+                        model: config.LLM_MODEL,
+                        promptTokens: usage.prompt_tokens,
+                        completionTokens: usage.completion_tokens,
+                        totalTokens: usage.total_tokens,
+                        costUsd: costUsd,
+                        purpose: 'trade_decision',
+                        relatedMarketId: input.marketSnapshot.conditionId
+                    }
+                }).catch(err => this.log.warn({ err }, 'Failed to log AI cost'));
+            }
 
             // Log the decision
             await this.logDecision(input, decision, prompt, config.LLM_MODEL, latencyMs);

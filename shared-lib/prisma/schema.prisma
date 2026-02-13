@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "linux-musl-openssl-3.0.x", "rhel-openssl-3.0.x"]
 }
 
@@ -8,62 +8,55 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ────────────────────────────────────────
-// Markets
-// ────────────────────────────────────────
 model Market {
-  id                String   @id @default(uuid())
-  conditionId       String   @unique @map("condition_id")
-  questionId        String   @map("question_id")
+  id                String       @id @default(uuid())
+  conditionId       String       @unique @map("condition_id")
+  questionId        String       @map("question_id")
   slug              String?
   question          String
   description       String?
-  outcomeYes        String   @default("Yes") @map("outcome_yes")
-  outcomeNo         String   @default("No") @map("outcome_no")
-  priceYes          Float    @default(0.5) @map("price_yes")
-  priceNo           Float    @default(0.5) @map("price_no")
-  volume24h         Float    @default(0) @map("volume_24h")
-  liquidity         Float    @default(0)
-  endDate           DateTime? @map("end_date")
-  resolved          Boolean  @default(false)
-  resolutionOutcome String?  @map("resolution_outcome")
-  active            Boolean  @default(true)
-  createdAt         DateTime @default(now()) @map("created_at")
-  updatedAt         DateTime @updatedAt @map("updated_at")
-
-  trades      Trade[]
-  positions   Position[]
-  aiDecisions AiDecision[]
+  outcomeYes        String       @default("Yes") @map("outcome_yes")
+  outcomeNo         String       @default("No") @map("outcome_no")
+  priceYes          Float        @default(0.5) @map("price_yes")
+  priceNo           Float        @default(0.5) @map("price_no")
+  volume24h         Float        @default(0) @map("volume_24h")
+  liquidity         Float        @default(0)
+  endDate           DateTime?    @map("end_date")
+  resolved          Boolean      @default(false)
+  resolutionOutcome String?      @map("resolution_outcome")
+  active            Boolean      @default(true)
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+  aiDecisions       AiDecision[]
+  positions         Position[]
+  trades            Trade[]
 
   @@map("markets")
 }
 
-// ────────────────────────────────────────
-// Trades
-// ────────────────────────────────────────
 model Trade {
-  id              String   @id @default(uuid())
-  marketId        String   @map("market_id")
-  side            String   // YES | NO
-  type            String   // MARKET | LIMIT
-  direction       String   // BUY | SELL
-  sizeUsd         Float    @map("size_usd")
-  price           Float
-  filledPrice     Float?   @map("filled_price")
-  filledSizeUsd   Float?   @map("filled_size_usd")
-  slippage        Float?
-  gasUsed         Float?   @map("gas_used")
-  txHash          String?  @map("tx_hash")
-  status          String   @default("PENDING") // PENDING | SUBMITTED | FILLED | FAILED | CANCELLED
-  strategyId      String?  @map("strategy_id")
-  confidence      Float?
-  reasoning       String?
-  errorMessage    String?  @map("error_message")
-  retryCount      Int      @default(0) @map("retry_count")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-
-  market Market @relation(fields: [marketId], references: [id])
+  id            String   @id @default(uuid())
+  marketId      String   @map("market_id")
+  side          String
+  type          String
+  direction     String
+  sizeUsd       Float    @map("size_usd")
+  price         Float
+  filledPrice   Float?   @map("filled_price")
+  filledSizeUsd Float?   @map("filled_size_usd")
+  slippage      Float?
+  gasUsed       Float?   @map("gas_used")
+  txHash        String?  @map("tx_hash")
+  status        String   @default("PENDING")
+  strategyId    String?  @map("strategy_id")
+  confidence    Float?
+  reasoning     String?
+  errorMessage  String?  @map("error_message")
+  retryCount    Int      @default(0) @map("retry_count")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  isPaper       Boolean  @default(false) @map("is_paper")
+  market          Market       @relation(fields: [marketId], references: [conditionId])
 
   @@index([marketId])
   @@index([status])
@@ -71,32 +64,26 @@ model Trade {
   @@map("trades")
 }
 
-// ────────────────────────────────────────
-// Positions
-// ────────────────────────────────────────
 model Position {
-  id              String   @id @default(uuid())
-  marketId        String   @map("market_id")
-  side            String   // YES | NO
-  sizeUsd         Float    @map("size_usd")
-  avgEntryPrice   Float    @map("avg_entry_price")
-  currentPrice    Float    @default(0) @map("current_price")
-  unrealizedPnl   Float    @default(0) @map("unrealized_pnl")
-  realizedPnl     Float    @default(0) @map("realized_pnl")
-  status          String   @default("OPEN") // OPEN | CLOSED | LIQUIDATED
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-
-  market Market @relation(fields: [marketId], references: [id])
+  id            String   @id @default(uuid())
+  marketId      String   @map("market_id")
+  side          String
+  sizeUsd       Float    @map("size_usd")
+  avgEntryPrice Float    @map("avg_entry_price")
+  currentPrice  Float    @default(0) @map("current_price")
+  unrealizedPnl Float    @default(0) @map("unrealized_pnl")
+  realizedPnl   Float    @default(0) @map("realized_pnl")
+  status        String   @default("OPEN")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+  isPaper       Boolean  @default(false) @map("is_paper")
+  market          Market       @relation(fields: [marketId], references: [conditionId])
 
   @@unique([marketId, side])
   @@index([status])
   @@map("positions")
 }
 
-// ────────────────────────────────────────
-// Portfolio
-// ────────────────────────────────────────
 model Portfolio {
   id                  String   @id @default(uuid())
   totalCapital        Float    @map("total_capital")
@@ -112,20 +99,18 @@ model Portfolio {
   snapshotDate        DateTime @default(now()) @map("snapshot_date")
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
+  isPaper             Boolean  @default(false) @map("is_paper")
 
   @@index([snapshotDate])
   @@map("portfolio")
 }
 
-// ────────────────────────────────────────
-// AI Decisions
-// ────────────────────────────────────────
 model AiDecision {
   id              String   @id @default(uuid())
   marketId        String   @map("market_id")
   strategyId      String   @map("strategy_id")
   trade           Boolean
-  side            String?  // YES | NO
+  side            String?
   confidence      Float
   positionSizeUsd Float?   @map("position_size_usd")
   reasoning       String?
@@ -136,8 +121,7 @@ model AiDecision {
   approved        Boolean  @default(false)
   executedTradeId String?  @map("executed_trade_id")
   createdAt       DateTime @default(now()) @map("created_at")
-
-  market Market @relation(fields: [marketId], references: [id])
+  market          Market   @relation(fields: [marketId], references: [conditionId])
 
   @@index([marketId])
   @@index([strategyId])
@@ -145,36 +129,30 @@ model AiDecision {
   @@map("ai_decisions")
 }
 
-// ────────────────────────────────────────
-// Strategy Scores
-// ────────────────────────────────────────
 model StrategyScore {
-  id              String   @id @default(uuid())
-  strategyId      String   @map("strategy_id")
-  strategyName    String   @map("strategy_name")
-  winRate         Float    @default(0) @map("win_rate")
-  totalTrades     Int      @default(0) @map("total_trades")
-  totalPnl        Float    @default(0) @map("total_pnl")
-  sharpeRatio     Float    @default(0) @map("sharpe_ratio")
-  maxDrawdown     Float    @default(0) @map("max_drawdown")
-  avgConfidence   Float    @default(0) @map("avg_confidence")
-  calScoreConf    Float    @default(0) @map("cal_score_conf") // calibration score
-  weight          Float    @default(1.0)
-  active          Boolean  @default(true)
-  scoredAt        DateTime @default(now()) @map("scored_at")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id            String   @id @default(uuid())
+  strategyId    String   @map("strategy_id")
+  strategyName  String   @map("strategy_name")
+  winRate       Float    @default(0) @map("win_rate")
+  totalTrades   Int      @default(0) @map("total_trades")
+  totalPnl      Float    @default(0) @map("total_pnl")
+  sharpeRatio   Float    @default(0) @map("sharpe_ratio")
+  maxDrawdown   Float    @default(0) @map("max_drawdown")
+  avgConfidence Float    @default(0) @map("avg_confidence")
+  calScoreConf  Float    @default(0) @map("cal_score_conf")
+  weight        Float    @default(1.0)
+  active        Boolean  @default(true)
+  scoredAt      DateTime @default(now()) @map("scored_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
 
   @@index([strategyId])
   @@map("strategy_scores")
 }
 
-// ────────────────────────────────────────
-// Performance Metrics
-// ────────────────────────────────────────
 model PerformanceMetric {
   id              String   @id @default(uuid())
-  metricDate      DateTime @map("metric_date")
+  metricDate      DateTime @unique @map("metric_date")
   totalPnl        Float    @default(0) @map("total_pnl")
   dailyPnl        Float    @default(0) @map("daily_pnl")
   sharpeRatio     Float    @default(0) @map("sharpe_ratio")
@@ -187,24 +165,20 @@ model PerformanceMetric {
   deployedPercent Float    @default(0) @map("deployed_percent")
   createdAt       DateTime @default(now()) @map("created_at")
 
-  @@unique([metricDate])
   @@map("performance_metrics")
 }
 
-// ────────────────────────────────────────
-// Risk Events
-// ────────────────────────────────────────
 model RiskEvent {
-  id              String   @id @default(uuid())
-  eventType       String   @map("event_type") // DRAWDOWN_BREACH | EXPOSURE_BREACH | SIZE_REJECT | KILL_SWITCH | CAPITAL_PRESERVATION
-  severity        String   // LOW | MEDIUM | HIGH | CRITICAL
-  message         String
-  details         Json?
-  tradeId         String?  @map("trade_id")
-  marketId        String?  @map("market_id")
-  resolved        Boolean  @default(false)
-  resolvedAt      DateTime? @map("resolved_at")
-  createdAt       DateTime @default(now()) @map("created_at")
+  id         String    @id @default(uuid())
+  eventType  String    @map("event_type")
+  severity   String
+  message    String
+  details    Json?
+  tradeId    String?   @map("trade_id")
+  marketId   String?   @map("market_id")
+  resolved   Boolean   @default(false)
+  resolvedAt DateTime? @map("resolved_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
 
   @@index([eventType])
   @@index([severity])
@@ -212,9 +186,6 @@ model RiskEvent {
   @@map("risk_events")
 }
 
-// ────────────────────────────────────────
-// Budget Configuration (singleton)
-// ────────────────────────────────────────
 model BudgetConfig {
   id                    String   @id @default(uuid())
   maxDailyAiSpend       Float    @default(10.0) @map("max_daily_ai_spend")
@@ -229,9 +200,6 @@ model BudgetConfig {
   @@map("budget_config")
 }
 
-// ────────────────────────────────────────
-// AI Cost Log
-// ────────────────────────────────────────
 model AiCostLog {
   id                String   @id @default(uuid())
   model             String
@@ -239,7 +207,7 @@ model AiCostLog {
   completionTokens  Int      @default(0) @map("completion_tokens")
   totalTokens       Int      @default(0) @map("total_tokens")
   costUsd           Float    @default(0) @map("cost_usd")
-  purpose           String   // trade_decision | market_analysis | sentiment | portfolio_optimization
+  purpose           String
   relatedMarketId   String?  @map("related_market_id")
   relatedDecisionId String?  @map("related_decision_id")
   durationMs        Int?     @map("duration_ms")
@@ -249,13 +217,11 @@ model AiCostLog {
   @@index([purpose])
   @@map("ai_cost_log")
 }
-// ────────────────────────────────────────
-// Activity Log
-// ────────────────────────────────────────
+
 model ActivityLog {
   id        String   @id @default(uuid())
-  level     String   @default("INFO") // INFO | SUCCESS | WARN | ERROR | TRADE
-  type      String   @default("SYSTEM") // SYSTEM | ANALYSIS | RISK | EXECUTION
+  level     String   @default("INFO")
+  type      String   @default("SYSTEM")
   message   String
   details   Json?
   createdAt DateTime @default(now()) @map("created_at")
@@ -265,26 +231,23 @@ model ActivityLog {
   @@map("activity_log")
 }
 
-// ────────────────────────────────────────
-// Trade Outcomes (Feedback Loop)
-// ────────────────────────────────────────
 model TradeOutcome {
-  id              String   @id @default(uuid())
-  tradeId         String   @map("trade_id")
-  marketId        String   @map("market_id")
-  strategyId      String   @map("strategy_id")
-  side            String   // YES | NO
-  entryPrice      Float    @map("entry_price")
-  exitPrice       Float?   @map("exit_price")
-  pnlUsd          Float    @default(0) @map("pnl_usd")
-  pnlPercent      Float    @default(0) @map("pnl_percent")
-  outcome         String   @default("PENDING") // PENDING | WIN | LOSS | BREAKEVEN
-  resolvedAt      DateTime? @map("resolved_at")
-  originalReasoning String? @map("original_reasoning")
-  marketQuestion  String?  @map("market_question")
-  lessonsLearned  String?  @map("lessons_learned")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id                String    @id @default(uuid())
+  tradeId           String    @map("trade_id")
+  marketId          String    @map("market_id")
+  strategyId        String    @map("strategy_id")
+  side              String
+  entryPrice        Float     @map("entry_price")
+  exitPrice         Float?    @map("exit_price")
+  pnlUsd            Float     @default(0) @map("pnl_usd")
+  pnlPercent        Float     @default(0) @map("pnl_percent")
+  outcome           String    @default("PENDING")
+  resolvedAt        DateTime? @map("resolved_at")
+  originalReasoning String?   @map("original_reasoning")
+  marketQuestion    String?   @map("market_question")
+  lessonsLearned    String?   @map("lessons_learned")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
 
   @@index([strategyId])
   @@index([outcome])
@@ -292,9 +255,6 @@ model TradeOutcome {
   @@map("trade_outcomes")
 }
 
-// ────────────────────────────────────────
-// Correction Notes (Post-Mortem)
-// ────────────────────────────────────────
 model CorrectionNote {
   id                String   @id @default(uuid())
   tradeOutcomeId    String   @map("trade_outcome_id")
@@ -302,9 +262,9 @@ model CorrectionNote {
   originalReasoning String   @map("original_reasoning")
   whatWentWrong     String   @map("what_went_wrong")
   correctionRule    String   @map("correction_rule")
-  severity          String   @default("MEDIUM") // LOW | MEDIUM | HIGH
+  severity          String   @default("MEDIUM")
   strategyId        String   @map("strategy_id")
-  category          String?  // e.g., OVERCONFIDENCE | BAD_TIMING | IGNORED_RISK | SENTIMENT_BIAS
+  category          String?
   active            Boolean  @default(true)
   appliedCount      Int      @default(0) @map("applied_count")
   createdAt         DateTime @default(now()) @map("created_at")
@@ -315,40 +275,34 @@ model CorrectionNote {
   @@map("correction_notes")
 }
 
-// ────────────────────────────────────────
-// Market Clusters (Correlation Awareness)
-// ────────────────────────────────────────
 model MarketCluster {
-  id              String   @id @default(uuid())
-  clusterName     String   @map("cluster_name")
-  description     String?
-  marketIds       Json     @map("market_ids") // Array of condition IDs
-  totalExposure   Float    @default(0) @map("total_exposure")
-  maxExposure     Float    @default(500) @map("max_exposure")
-  correlationScore Float   @default(0) @map("correlation_score")
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
+  id               String   @id @default(uuid())
+  clusterName      String   @map("cluster_name")
+  description      String?
+  marketIds        Json     @map("market_ids")
+  totalExposure    Float    @default(0) @map("total_exposure")
+  maxExposure      Float    @default(500) @map("max_exposure")
+  correlationScore Float    @default(0) @map("correlation_score")
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
 
   @@index([clusterName])
   @@map("market_clusters")
 }
 
-// ────────────────────────────────────────
-// Market Regime Snapshots
-// ────────────────────────────────────────
 model MarketRegimeSnapshot {
-  id              String   @id @default(uuid())
-  regime          String   // STABLE_RANGE | VOLATILE_TREND | LOW_LIQUIDITY | HIGH_MOMENTUM | MEAN_REVERTING
-  confidence      Float    @default(0)
-  avgVolatility   Float    @default(0) @map("avg_volatility")
-  avgTrendStrength Float   @default(0) @map("avg_trend_strength")
-  avgLiquidity    Float    @default(0) @map("avg_liquidity")
-  marketsSampled  Int      @default(0) @map("markets_sampled")
-  strategyMultipliers Json? @map("strategy_multipliers") // { "momentum": 1.5, "mean-reversion": 0.8, ... }
-  details         Json?
-  snapshotDate    DateTime @default(now()) @map("snapshot_date")
-  createdAt       DateTime @default(now()) @map("created_at")
+  id                  String   @id @default(uuid())
+  regime              String
+  confidence          Float    @default(0)
+  avgVolatility       Float    @default(0) @map("avg_volatility")
+  avgTrendStrength    Float    @default(0) @map("avg_trend_strength")
+  avgLiquidity        Float    @default(0) @map("avg_liquidity")
+  marketsSampled      Int      @default(0) @map("markets_sampled")
+  strategyMultipliers Json?    @map("strategy_multipliers")
+  details             Json?
+  snapshotDate        DateTime @default(now()) @map("snapshot_date")
+  createdAt           DateTime @default(now()) @map("created_at")
 
   @@index([snapshotDate])
   @@index([regime])

@@ -100,8 +100,8 @@ export default function IntelligencePage() {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                     {renderMetricCard(
                         'Current Regime',
-                        data.regime.current.replace('_', ' '),
-                        `Vol: ${(data.regime.volatility * 100).toFixed(1)}% | Trend: ${(data.regime.trendStrength * 100).toFixed(1)}%`,
+                        data.regime?.current?.replace('_', ' ') || 'UNKNOWN',
+                        `Vol: ${((data.regime?.volatility || 0) * 100).toFixed(1)}% | Trend: ${((data.regime?.trendStrength || 0) * 100).toFixed(1)}%`,
                         '🌡️',
                         'text-accent'
                     )}
@@ -134,7 +134,7 @@ export default function IntelligencePage() {
                             <span className="text-xl">📝</span> Recent Post-Mortems
                         </h3>
                         <div className="space-y-3">
-                            {data.postMortem.recentNotes.length === 0 ? (
+                            {(data.postMortem?.recentNotes || []).length === 0 ? (
                                 <div className="empty-state">No recent major losses analyzed.</div>
                             ) : (
                                 data.postMortem.recentNotes.map((note: any, i: number) => (
@@ -155,7 +155,7 @@ export default function IntelligencePage() {
                             <span className="text-xl">🔄</span> Recent Strategy Feedback
                         </h3>
                         <div className="space-y-3">
-                            {data.feedback.recentOutcomes.length === 0 ? (
+                            {(data.feedback?.recentOutcomes || []).length === 0 ? (
                                 <div className="empty-state">No recent trade feedback.</div>
                             ) : (
                                 data.feedback.recentOutcomes.slice(0, 5).map((outcome: any, i: number) => (
@@ -193,11 +193,11 @@ export default function IntelligencePage() {
                         </tr>
                     </thead>
                     <tbody>
-                        {data?.feedback.recentOutcomes.map((outcome: any, i: number) => (
+                        {(data?.feedback?.recentOutcomes || []).map((outcome: any, i: number) => (
                             <tr key={i}>
                                 <td>{new Date(outcome.timestamp).toLocaleString()}</td>
                                 <td><span className="badge">{outcome.strategyId}</span></td>
-                                <td className="max-w-[200px] truncate" title={outcome.symbol}>{outcome.symbol}</td>
+                                <td className="max-w-[200px] truncate" title={outcome.symbol || 'Unknown'}>{outcome.symbol || 'Unknown'}</td>
                                 <td>
                                     <span className={`badge ${outcome.pnl > 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'}`}>
                                         {outcome.pnl > 0 ? 'WIN' : 'LOSS'}
@@ -225,10 +225,10 @@ export default function IntelligencePage() {
                 <p className="text-sm text-muted mb-6">These rules are injected into the LLM prompt when similar market conditions are detected.</p>
 
                 <div className="grid gap-4">
-                    {data?.memory.recentlyApplied.map((item: any, i: number) => (
+                    {(data?.memory?.recentlyApplied || []).map((item: any, i: number) => (
                         <div key={i} className="border border-border-primary rounded-lg p-4 bg-bg-card-hover">
                             <div className="flex justify-between items-start mb-2">
-                                <span className="badge bg-accent-subtle text-accent">Rule #{item.id.slice(0, 8)}</span>
+                                <span className="badge bg-accent-subtle text-accent">Rule #{item.id?.slice(0, 8) || 'unknown'}</span>
                                 <span className="text-xs text-muted">Applied {item.applyCount} times</span>
                             </div>
                             <p className="text-sm font-medium mb-1">{item.content}</p>
@@ -252,7 +252,7 @@ export default function IntelligencePage() {
                     <div className="w-16 h-16 rounded-full bg-accent flex items-center justify-center text-3xl mb-4">
                         🌡️
                     </div>
-                    <h3 className="text-xl font-bold mb-1">{data?.regime.current.replace('_', ' ')}</h3>
+                    <h3 className="text-xl font-bold mb-1">{data?.regime?.current?.replace('_', ' ') || 'UNKNOWN'}</h3>
                     <p className="text-muted text-sm">Current Detected Market Regime</p>
                 </div>
                 <div className="card p-6">
@@ -294,7 +294,7 @@ export default function IntelligencePage() {
                             </tr>
                         </thead>
                         <tbody>
-                            {data?.regime.history.map((snap: any, i: number) => (
+                            {(data?.regime?.history || []).map((snap: any, i: number) => (
                                 <tr key={i}>
                                     <td>{new Date(snap.timestamp).toLocaleString()}</td>
                                     <td><span className="badge bg-secondary-subtle">{snap.regime}</span></td>
@@ -317,12 +317,12 @@ export default function IntelligencePage() {
         <div className="card p-6">
             <h3 className="text-lg font-semibold mb-6">Loss Analysis (Post-Mortems)</h3>
             <div className="grid gap-4">
-                {data?.postMortem.recentNotes.map((note: any, i: number) => (
+                {(data?.postMortem?.recentNotes || []).map((note: any, i: number) => (
                     <div key={i} className="border border-danger-border rounded-lg p-5 bg-danger-bg-subtle relative overflow-hidden">
                         <div className="absolute top-0 left-0 w-1 h-full bg-danger"></div>
                         <div className="flex justify-between mb-2">
                             <h4 className="font-bold text-danger flex items-center gap-2">
-                                Analysis #{note.id.slice(0, 6)}
+                                Analysis #{note.id?.slice(0, 6) || 'unknown'}
                                 <span className="text-xs font-normal text-muted px-2 py-0.5 bg-bg-card rounded border border-border-subtle">{note.category}</span>
                             </h4>
                             <span className="text-xs text-muted">{new Date(note.createdAt).toLocaleString()}</span>
@@ -347,7 +347,7 @@ export default function IntelligencePage() {
                 <p className="text-sm text-muted mb-6">Markets are grouped by correlation to prevent over-exposure to single topics (e.g., "Middle East Conflict" or "US Politics").</p>
 
                 <div className="space-y-6">
-                    {data?.clusters.clusters.map((cluster: any, i: number) => (
+                    {(data?.clusters?.clusters || []).map((cluster: any, i: number) => (
                         <div key={i}>
                             <div className="flex justify-between items-end mb-1">
                                 <div>

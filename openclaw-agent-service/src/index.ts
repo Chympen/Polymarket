@@ -60,13 +60,13 @@ let isCycleRunning = false; // Prevent overlapping AI cycles
 
 // Paper Trading State
 let paperPortfolio: PortfolioState = {
-    totalCapital: 1000, // $1,000 Starting Cash
-    availableCapital: 1000,
+    totalCapital: 1000000,
+    availableCapital: 1000000,
     deployedCapital: 0,
     totalPnl: 0,
     dailyPnl: 0,
     dailyPnlPercent: 0,
-    highWaterMark: 1000,
+    highWaterMark: 1000000,
     maxDrawdown: 0,
     killSwitchActive: false,
     capitalPreservation: false,
@@ -76,31 +76,78 @@ let paperPortfolio: PortfolioState = {
 /**
  * Update Paper Portfolio values based on live market prices.
  */
-function updatePaperPortfolio(markets: MarketSnapshot[]) {
+async function updatePaperPortfolio(markets: MarketSnapshot[]) {
     let currentPortfolioValue = paperPortfolio.availableCapital;
     let deployed = 0;
 
     // Update each position with current market price
-    paperPortfolio.positions = paperPortfolio.positions.map(pos => {
+    const updatePromises = paperPortfolio.positions.map(async (pos) => {
         const market = markets.find(m => m.conditionId === pos.conditionId);
         if (market) {
             pos.currentPrice = pos.side === 'YES' ? market.priceYes : market.priceNo;
-            const value = pos.sizeUsd * (pos.currentPrice / pos.avgEntryPrice); // Simplified mark-to-market
+            const value = pos.sizeUsd * (pos.currentPrice / pos.avgEntryPrice);
             pos.unrealizedPnl = value - pos.sizeUsd;
             currentPortfolioValue += value;
             deployed += value;
+
+            // Persist mark-to-market to DB
+            await getDatabase().position.update({
+                where: { id: pos.id },
+                data: {
+                    currentPrice: pos.currentPrice,
+                    unrealizedPnl: pos.unrealizedPnl,
+                }
+            }).catch(err => log.error({ err }, 'Failed to update paper position price in DB'));
         }
         return pos;
     });
 
+    await Promise.all(updatePromises);
+
     paperPortfolio.totalCapital = currentPortfolioValue;
     paperPortfolio.deployedCapital = deployed;
-    paperPortfolio.totalPnl = paperPortfolio.totalCapital - 1000;
-    paperPortfolio.dailyPnl = paperPortfolio.totalPnl; // Simplified for now
-    paperPortfolio.dailyPnlPercent = (paperPortfolio.totalPnl / 1000) * 100;
+    paperPortfolio.totalPnl = paperPortfolio.totalCapital - 1000000;
+    paperPortfolio.dailyPnl = paperPortfolio.totalPnl;
+    paperPortfolio.dailyPnlPercent = (paperPortfolio.totalPnl / 1000000) * 100;
+
+    // Persist portfolio snapshot
+    await savePortfolioSnapshot(true);
 }
 
-function initializeServices() {
+/**
+ * Save a snapshot of the current portfolio to the database.
+ */
+async function savePortfolioSnapshot(isPaper: boolean) {
+    try {
+        const db = getDatabase();
+        const portfolio = isPaper ? paperPortfolio : await getPortfolioState();
+
+        await db.portfolio.create({
+            data: {
+                totalCapital: portfolio.totalCapital,
+                availableCapital: portfolio.availableCapital,
+                deployedCapital: portfolio.deployedCapital,
+                totalPnl: portfolio.totalPnl,
+                dailyPnl: portfolio.dailyPnl,
+                dailyPnlPercent: portfolio.dailyPnlPercent,
+                highWaterMark: portfolio.highWaterMark,
+                maxDrawdown: portfolio.maxDrawdown,
+                killSwitchActive: portfolio.killSwitchActive,
+                capitalPreservation: portfolio.capitalPreservation,
+                isPaper: isPaper,
+            }
+        });
+
+        // Also persist open paper positions if they changed
+        if (isPaper) {
+            // We handle individual position persistence in the BUY/SELL blocks for precision,
+            // but this snapshot captures the aggregate metrics.
+        }
+    } catch (err) {
+        log.error({ err }, 'Failed to save portfolio snapshot');
+    }
+}
+async function initializeServices() {
     log.info('Initializing agents and services...');
 
     agents = [
@@ -121,6 +168,58 @@ function initializeServices() {
     postMortemService = new PostMortemService();
     feedbackService = new FeedbackService();
     correlationService = new CorrelationService();
+
+    // Load Paper State from DB
+    try {
+        const db = getDatabase();
+        const savedPortfolio = await db.portfolio.findFirst({
+            where: { isPaper: true },
+            orderBy: { createdAt: 'desc' }
+        });
+
+        if (savedPortfolio) {
+            paperPortfolio.availableCapital = savedPortfolio.availableCapital;
+            paperPortfolio.totalCapital = savedPortfolio.totalCapital;
+            paperPortfolio.deployedCapital = savedPortfolio.deployedCapital;
+            paperPortfolio.totalPnl = savedPortfolio.totalPnl;
+            paperPortfolio.dailyPnlPercent = savedPortfolio.dailyPnlPercent;
+            paperPortfolio.highWaterMark = Math.max(savedPortfolio.highWaterMark, 1000000);
+
+            // Ensure user gets the new $1M budget if they were on the old $1k budget
+            if (paperPortfolio.totalCapital < 500000) {
+                log.info('📈 Increasing paper budget to $1,000,000 target');
+                const diff = 1000000 - paperPortfolio.totalCapital;
+                paperPortfolio.availableCapital += diff;
+                paperPortfolio.totalCapital = 1000000;
+                paperPortfolio.highWaterMark = 1000000;
+            }
+
+            log.info('✅ Paper portfolio state loaded from database');
+        }
+
+        const openPaperPositions = await db.position.findMany({
+            where: { isPaper: true, status: 'OPEN' }
+        });
+
+        paperPortfolio.positions = openPaperPositions.map((p: any) => ({
+            id: p.id,
+            marketId: p.marketId,
+            conditionId: p.marketId,
+            side: p.side as 'YES' | 'NO',
+            sizeUsd: p.sizeUsd,
+            avgEntryPrice: p.avgEntryPrice,
+            currentPrice: p.currentPrice,
+            unrealizedPnl: p.unrealizedPnl,
+            realizedPnl: p.realizedPnl,
+            createdAt: p.createdAt.toISOString()
+        }));
+
+        if (paperPortfolio.positions.length > 0) {
+            log.info({ count: paperPortfolio.positions.length }, '✅ Paper positions loaded from database');
+        }
+    } catch (err) {
+        log.error({ err }, 'Failed to load paper state from database');
+    }
 
     log.info({ agentCount: agents.length }, 'Services initialized');
 }
@@ -170,7 +269,7 @@ async function runTradingCycle(): Promise<void> {
         const markets = await fetchActiveMarkets();
 
         // Update Paper Portfolio Prices
-        updatePaperPortfolio(markets);
+        await updatePaperPortfolio(markets);
 
         log.info({ marketCount: markets.length }, 'Active markets fetched');
         await logActivity('INFO', 'ANALYSIS', `Fetched ${markets.length} active markets. Analyzing top 20...`, {
@@ -306,11 +405,31 @@ async function runTradingCycle(): Promise<void> {
 
                     // Execute Paper Trade
                     if (direction === 'BUY') {
-                        if (paperPortfolio.availableCapital >= consensus.positionSizeUsd) {
-                            paperPortfolio.availableCapital -= consensus.positionSizeUsd;
-                            paperPortfolio.deployedCapital += consensus.positionSizeUsd;
+                        // REFRESH: Ensure we use the latest available capital from DB/refreshed portfolio
+                        if (portfolio.availableCapital >= consensus.positionSizeUsd) {
+                            portfolio.availableCapital -= consensus.positionSizeUsd;
+                            portfolio.deployedCapital += consensus.positionSizeUsd;
+
+                            // Synchronize global paper portfolio state
+                            paperPortfolio.availableCapital = portfolio.availableCapital;
+                            paperPortfolio.deployedCapital = portfolio.deployedCapital;
 
                             const entryPrice = consensus.side === 'YES' ? market.priceYes : market.priceNo;
+
+                            // Persist Paper Position to DB
+                            const pos = await getDatabase().position.create({
+                                data: {
+                                    marketId: market.conditionId,
+                                    side: consensus.side,
+                                    sizeUsd: consensus.positionSizeUsd,
+                                    avgEntryPrice: entryPrice,
+                                    currentPrice: entryPrice,
+                                    unrealizedPnl: 0,
+                                    realizedPnl: 0,
+                                    status: 'OPEN',
+                                    isPaper: true,
+                                }
+                            }).catch((err: any) => log.error({ err }, 'Failed to persist paper position'));
 
                             paperPortfolio.positions.push({
                                 marketId: market.conditionId,
@@ -320,16 +439,37 @@ async function runTradingCycle(): Promise<void> {
                                 avgEntryPrice: entryPrice,
                                 currentPrice: entryPrice,
                                 unrealizedPnl: 0,
-                                realizedPnl: 0
+                                realizedPnl: 0,
+                                createdAt: new Date().toISOString(),
+                                id: pos?.id || `paper-${Math.random().toString(36).substring(2, 9)}`
                             });
 
                             await logActivity('TRADE', 'PAPER', `[PAPER] Bought ${consensus.side} on "${market.question.slice(0, 30)}..." @ ${entryPrice.toFixed(2)}`, {
                                 size: consensus.positionSizeUsd,
                                 confidence: consensus.aggregateConfidence,
-                                newBalance: paperPortfolio.availableCapital
+                                newBalance: portfolio.availableCapital
                             });
+
+                            // Record Paper Trade in database for Trade History tab
+                            await getDatabase().trade.create({
+                                data: {
+                                    marketId: market.conditionId,
+                                    side: consensus.side,
+                                    type: 'MARKET',
+                                    direction: 'BUY',
+                                    sizeUsd: consensus.positionSizeUsd,
+                                    price: entryPrice,
+                                    filledPrice: entryPrice,
+                                    filledSizeUsd: consensus.positionSizeUsd,
+                                    status: 'FILLED',
+                                    strategyId: 'meta-allocator',
+                                    confidence: consensus.aggregateConfidence,
+                                    reasoning: consensus.reasoning,
+                                    isPaper: true,
+                                }
+                            }).catch((err: any) => log.error({ err }, 'Failed to record paper BUY in DB'));
                         } else {
-                            log.warn('📝 Paper Trading: Insufficient funds');
+                            log.warn({ available: portfolio.availableCapital, required: consensus.positionSizeUsd }, '📝 Paper Trading: Insufficient funds');
                         }
                     } else if (direction === 'SELL') {
                         // Handle SELL (Exit)
@@ -342,24 +482,53 @@ async function runTradingCycle(): Promise<void> {
                             const exitValue = position.sizeUsd * (currentPrice / position.avgEntryPrice);
                             const pnl = exitValue - position.sizeUsd;
 
-                            paperPortfolio.availableCapital += exitValue;
-                            paperPortfolio.deployedCapital -= position.sizeUsd;
-                            paperPortfolio.realizedPnl = (paperPortfolio.realizedPnl || 0) + pnl; // Add realized PnL tracking if needed, mainly strictly capital
+                            portfolio.availableCapital += exitValue;
+                            portfolio.deployedCapital -= position.sizeUsd;
+                            portfolio.realizedPnl = (portfolio.realizedPnl || 0) + pnl;
 
-                            // For now, assume full exit for simplicity in paper mode or handle partial?
-                            // Strategy usually sends full size for stop loss, partial for profit. 
-                            // Let's assume consensus.positionSizeUsd determines amount to reduce basis.
-                            // But usually PortfolioAgent sends specific size.
+                            // Sync global state
+                            paperPortfolio.availableCapital = portfolio.availableCapital;
+                            paperPortfolio.deployedCapital = portfolio.deployedCapital;
+                            paperPortfolio.realizedPnl = portfolio.realizedPnl;
 
-                            // Simplified: Remove entire position for now to match 'strategy usually sends full exit on stop loss'.
+                            // Persist Exit in DB
+                            await getDatabase().position.update({
+                                where: { id: position.id },
+                                data: {
+                                    status: 'CLOSED',
+                                    realizedPnl: pnl,
+                                    currentPrice: currentPrice,
+                                }
+                            }).catch((err: any) => log.error({ err }, 'Failed to close paper position in DB'));
+
                             paperPortfolio.positions.splice(posIndex, 1);
 
                             await logActivity('TRADE', 'PAPER', `[PAPER] Sold ${consensus.side} on "${market.question.slice(0, 30)}..." @ ${currentPrice.toFixed(2)} (PnL: $${pnl.toFixed(2)})`, {
                                 exitValue: exitValue,
                                 pnl: pnl,
-                                newBalance: paperPortfolio.availableCapital
+                                newBalance: portfolio.availableCapital
                             });
-                        } else {
+
+                            // Record Paper Trade in database for Trade History tab
+                            await getDatabase().trade.create({
+                                data: {
+                                    marketId: market.conditionId,
+                                    side: consensus.side,
+                                    type: 'MARKET',
+                                    direction: 'SELL',
+                                    sizeUsd: exitValue,
+                                    price: currentPrice,
+                                    filledPrice: currentPrice,
+                                    filledSizeUsd: exitValue,
+                                    status: 'FILLED',
+                                    strategyId: 'meta-allocator',
+                                    confidence: consensus.aggregateConfidence,
+                                    reasoning: consensus.reasoning,
+                                    isPaper: true,
+                                }
+                            }).catch((err: any) => log.error({ err }, 'Failed to record paper SELL in DB'));
+                        }
+                        else {
                             log.warn(`📝 Paper Trading: Cannot SELL, position not found for ${market.question.slice(0, 20)}`);
                         }
                     }
@@ -501,7 +670,7 @@ async function fetchActiveMarkets(): Promise<MarketSnapshot[]> {
             timeout: 15_000,
         });
 
-        return response.data.map((m: any, i: number) => {
+        const snapshots: MarketSnapshot[] = response.data.map((m: any, i: number) => {
             const prices = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices) : m.outcomePrices;
             const priceYes = Number(prices?.[0] || m.bestBid || 0.5);
             const priceNo = Number(prices?.[1] || 1 - priceYes);
@@ -520,6 +689,35 @@ async function fetchActiveMarkets(): Promise<MarketSnapshot[]> {
                 orderBookDepth: [],
             };
         });
+
+        // ── PERSIST: Upsert markets to database ──
+        // This ensures foreign keys like AiDecision and Trade can link to a valid Market record.
+        const db = getDatabase();
+        for (const m of snapshots) {
+            await db.market.upsert({
+                where: { conditionId: m.conditionId },
+                update: {
+                    question: m.question,
+                    priceYes: m.priceYes,
+                    priceNo: m.priceNo,
+                    volume24h: m.volume24h,
+                    liquidity: m.liquidity,
+                    active: true,
+                },
+                create: {
+                    conditionId: m.conditionId,
+                    questionId: m.questionId,
+                    question: m.question,
+                    priceYes: m.priceYes,
+                    priceNo: m.priceNo,
+                    volume24h: m.volume24h,
+                    liquidity: m.liquidity,
+                    active: true,
+                }
+            }).catch(err => log.error({ err, market: m.question.slice(0, 30) }, 'Failed to upsert market in DB'));
+        }
+
+        return snapshots;
     } catch (error) {
         log.error({ error: (error as Error).message }, 'Failed to fetch markets');
         return [];
@@ -591,25 +789,29 @@ async function getPortfolioState(): Promise<PortfolioState> {
     const db = getDatabase();
 
     const portfolio = await db.portfolio.findFirst({
+        where: { isPaper: isPaperTrading },
         orderBy: { createdAt: 'desc' },
     });
 
     const positions = await db.position.findMany({
-        where: { status: 'OPEN' },
+        where: {
+            status: 'OPEN',
+            isPaper: isPaperTrading
+        },
     });
 
     return {
-        totalCapital: portfolio?.totalCapital || 10000,
-        availableCapital: portfolio?.availableCapital || 10000,
+        totalCapital: portfolio?.totalCapital || (isPaperTrading ? 1000 : 10000),
+        availableCapital: portfolio?.availableCapital || (isPaperTrading ? 1000 : 10000),
         deployedCapital: portfolio?.deployedCapital || 0,
         totalPnl: portfolio?.totalPnl || 0,
         dailyPnl: portfolio?.dailyPnl || 0,
         dailyPnlPercent: portfolio?.dailyPnlPercent || 0,
-        highWaterMark: portfolio?.highWaterMark || 10000,
+        highWaterMark: portfolio?.highWaterMark || (isPaperTrading ? 1000 : 10000),
         maxDrawdown: portfolio?.maxDrawdown || 0,
         killSwitchActive: portfolio?.killSwitchActive || false,
         capitalPreservation: portfolio?.capitalPreservation || false,
-        positions: positions.map((p: { marketId: string; side: string; sizeUsd: number; avgEntryPrice: number; currentPrice: number; unrealizedPnl: number; realizedPnl: number }) => ({
+        positions: positions.map((p: any) => ({
             marketId: p.marketId,
             conditionId: p.marketId,
             side: p.side as 'YES' | 'NO',
@@ -618,6 +820,8 @@ async function getPortfolioState(): Promise<PortfolioState> {
             currentPrice: p.currentPrice,
             unrealizedPnl: p.unrealizedPnl,
             realizedPnl: p.realizedPnl,
+            createdAt: p.createdAt.toISOString(),
+            id: p.id
         })),
     };
 }
@@ -671,7 +875,7 @@ async function main(): Promise<void> {
     const config = loadConfig();
 
     // 2. Initialize agents (connects to DB)
-    initializeServices();
+    await initializeServices();
 
     const app = express();
 
@@ -757,15 +961,37 @@ async function main(): Promise<void> {
                 correlationService.getClusterStats(),
             ]);
 
+            const currentRegime = regimeDetector.getCurrentRegime() || { regime: 'STABLE_RANGE', volatility: 0, trendStrength: 0 };
+
             res.json({
-                feedback,
-                memory,
+                feedback: {
+                    ...feedback,
+                    winRate: feedback.totalOutcomes > 0 ? feedback.wins / feedback.totalOutcomes : 0,
+                    totalTrades: feedback.totalOutcomes,
+                    averageWeight: feedback.strategyPerformance.length > 0
+                        ? feedback.strategyPerformance.reduce((s, p) => s + p.weight, 0) / feedback.strategyPerformance.length
+                        : 1.0,
+                },
+                memory: {
+                    totalMemories: memory.totalCases,
+                    activeRules: memory.activeCorrections,
+                    recentlyApplied: memory.recentCorrections,
+                },
                 regime: {
-                    current: regimeDetector.getCurrentRegime()?.regime || 'STABLE_RANGE',
+                    current: currentRegime.regime,
+                    volatility: (currentRegime as any).volatility || 0,
+                    trendStrength: (currentRegime as any).trendStrength || 0,
                     history: regimeHistory,
                 },
-                postMortem,
-                clusters,
+                postMortem: {
+                    totalMistakes: postMortem.totalNotes,
+                    topCategory: postMortem.byCategory[0]?.category || 'NONE',
+                    recentNotes: postMortem.recentNotes,
+                },
+                clusters: {
+                    ...clusters,
+                    highExposure: clusters.clusters.filter((c: any) => (c.exposure || 0) > (c.limit || 0)).length,
+                },
                 timestamp: Date.now(),
             });
         } catch (error) {
