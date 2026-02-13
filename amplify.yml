@@ -5,16 +5,16 @@ applications:
       phases:
         preBuild:
           commands:
-            - npm ci
-            - npm run generate --workspace=shared-lib
+            - cd .. && npm ci
+            - cd .. && npm run generate --workspace=shared-lib
         build:
           commands:
-            - npm run build --workspace=web-dashboard
+            - cd .. && npm run build --workspace=web-dashboard
       artifacts:
         baseDirectory: .next
         files:
           - '**/*'
       cache:
         paths:
-          - node_modules/**/*
+          - ../node_modules/**/*
           - .next/cache/**/*

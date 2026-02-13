@@ -56,6 +56,7 @@ let correlationService: CorrelationService;
 // Control Switch
 let isTradingActive = false; // Default to OFF as requested
 let isPaperTrading = process.env.PAPER_TRADING === 'true'; // Controlled by env var
+let isCycleRunning = false; // Prevent overlapping AI cycles
 
 // Paper Trading State
 let paperPortfolio: PortfolioState = {
@@ -136,26 +137,35 @@ function initializeServices() {
  *  6. Forward validated trades to Trade Executor
  */
 async function runTradingCycle(): Promise<void> {
-    // Control Switch Check
+    // 1. Concurrency Guard
+    if (isCycleRunning) {
+        log.warn('⚠️ Trading cycle already in progress — skipping trigger to save CPU');
+        return;
+    }
+
+    // 2. Control Switch Check
     if (!isTradingActive) {
         log.info('⏸️ Trading cycle skipped: Bot is PAUSED.');
         return;
     }
 
-    // Ensure services are initialized
-    if (!metaAllocator) {
-        throw new Error('Services not initialized. Call initializeServices() first.');
-    }
-
-    log.info('🔄 Starting trading cycle...');
-    if (isPaperTrading) {
-        log.info('📝 PAPER TRADING MODE ACTIVE — No real funds will be used.');
-    } else {
-        log.warn('⚠️ LIVE TRADING MODE ACTIVE — Real funds AT RISK.');
-    }
-    await logActivity('INFO', 'SYSTEM', `Starting trading cycle (${isPaperTrading ? 'PAPER' : 'LIVE'})...`);
-
+    isCycleRunning = true;
     try {
+
+        // Ensure services are initialized
+        if (!metaAllocator) {
+            throw new Error('Services not initialized. Call initializeServices() first.');
+        }
+
+        log.info('🔄 Starting trading cycle...');
+        if (isPaperTrading) {
+            log.info('📝 PAPER TRADING MODE ACTIVE — No real funds will be used.');
+        } else {
+            log.warn('⚠️ LIVE TRADING MODE ACTIVE — Real funds AT RISK.');
+        }
+        await logActivity('INFO', 'SYSTEM', `Starting trading cycle (${isPaperTrading ? 'PAPER' : 'LIVE'})...`);
+
+
         // ── Step 1: Fetch active markets ──
         const markets = await fetchActiveMarkets();
 
@@ -445,6 +455,8 @@ async function runTradingCycle(): Promise<void> {
     } catch (error) {
         log.error({ error: (error as Error).message }, '❌ Trading cycle failed');
         await logActivity('ERROR', 'SYSTEM', `Trading cycle FAILED: ${(error as Error).message}`);
+    } finally {
+        isCycleRunning = false;
     }
 }
 
@@ -783,8 +795,8 @@ async function main(): Promise<void> {
         res.json(paperPortfolio);
     });
 
-    // ── Schedule trading cycle (every 10 seconds) ──
-    cron.schedule('*/10 * * * * *', () => {
+    // ── Schedule trading cycle (every 1 minute) ──
+    cron.schedule('*/1 * * * *', () => {
         log.info('⏰ Scheduled trading cycle triggered');
         runTradingCycle().catch((err) =>
             log.error({ error: err.message }, 'Scheduled trading cycle failed')
