@@ -2,32 +2,21 @@
 
 import { useEffect, useState } from 'react';
 
-interface BudgetConfig {
-    maxDailyAiSpend: number;
-    maxMonthlyAiSpend: number;
-    maxTotalTradeSpend: number;
-    maxTradeSize: number;
-    alertThresholdPercent: number;
-    aiSpendingPaused: boolean;
-}
-
-interface PurposeBreakdown {
-    purpose: string;
-    _sum: { costUsd: number };
-    _count: number;
-}
-
 export default function BudgetPage() {
     const [config, setConfig] = useState<BudgetConfig>({
-        maxDailyAiSpend: 10, maxMonthlyAiSpend: 200, maxTotalTradeSpend: 1000,
-        maxTradeSize: 50, alertThresholdPercent: 80, aiSpendingPaused: false,
+        maxDailyLossUsd: 50, maxWeeklyLossUsd: 200, maxTotalExposureUsd: 1000,
+        maxTradeSizeUsd: 50, alertThresholdPercent: 80, tradingPaused: false,
+        minConfidence: 0.55, estimatedSlippagePercent: 3.5, minLiquidityUsd: 1000,
+        minPriceThreshold: 0.08, maxPriceThreshold: 0.92
     });
-    const [dailyAiSpend, setDailyAiSpend] = useState(0);
-    const [monthlyAiSpend, setMonthlyAiSpend] = useState(0);
-    const [monthlyAiCalls, setMonthlyAiCalls] = useState(0);
-    const [monthlyTokens, setMonthlyTokens] = useState(0);
-    const [totalTradeSpend, setTotalTradeSpend] = useState(0);
-    const [purposeBreakdown, setPurposeBreakdown] = useState<PurposeBreakdown[]>([]);
+    const [metrics, setMetrics] = useState({
+        dailyLoss: 0,
+        weeklyLoss: 0,
+        dailyPnl: 0,
+        weeklyPnl: 0,
+        currentExposure: 0,
+        todayTrades: 0,
+    });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [editConfig, setEditConfig] = useState<BudgetConfig | null>(null);
@@ -38,12 +27,7 @@ export default function BudgetPage() {
             if (res.ok) {
                 const data = await res.json();
                 setConfig(data.config);
-                setDailyAiSpend(data.dailyAiSpend);
-                setMonthlyAiSpend(data.monthlyAiSpend);
-                setMonthlyAiCalls(data.monthlyAiCalls);
-                setMonthlyTokens(data.monthlyTokens);
-                setTotalTradeSpend(data.totalTradeSpend);
-                setPurposeBreakdown(data.purposeBreakdown || []);
+                setMetrics(data.metrics);
             }
         } catch (e) {
             console.error('Budget fetch error:', e);
@@ -77,9 +61,9 @@ export default function BudgetPage() {
         }
     }
 
-    const dailyPercent = config.maxDailyAiSpend > 0 ? (dailyAiSpend / config.maxDailyAiSpend) * 100 : 0;
-    const monthlyPercent = config.maxMonthlyAiSpend > 0 ? (monthlyAiSpend / config.maxMonthlyAiSpend) * 100 : 0;
-    const tradePercent = config.maxTotalTradeSpend > 0 ? (totalTradeSpend / config.maxTotalTradeSpend) * 100 : 0;
+    const exposurePercent = config.maxTotalExposureUsd > 0 ? (metrics.currentExposure / config.maxTotalExposureUsd) * 100 : 0;
+    const dailyLossPercent = config.maxDailyLossUsd > 0 ? (metrics.dailyLoss / config.maxDailyLossUsd) * 100 : 0;
+    const weeklyLossPercent = config.maxWeeklyLossUsd > 0 ? (metrics.weeklyLoss / config.maxWeeklyLossUsd) * 100 : 0;
 
     function progressClass(pct: number) {
         if (pct >= 90) return 'danger';
@@ -87,17 +71,10 @@ export default function BudgetPage() {
         return 'success';
     }
 
-    const purposeColors: Record<string, string> = {
-        trade_decision: '#6366f1',
-        market_analysis: '#3b82f6',
-        sentiment: '#8b5cf6',
-        portfolio_optimization: '#10b981',
-    };
-
     if (loading) {
         return (
             <div>
-                <div className="page-header"><h1>Budget Manager</h1></div>
+                <div className="page-header"><h1>Risk Management</h1></div>
                 <div className="grid-3">
                     {[1, 2, 3].map(i => <div key={i} className="card"><div className="skeleton" style={{ height: 100 }} /></div>)}
                 </div>
@@ -111,119 +88,98 @@ export default function BudgetPage() {
     return (
         <div>
             <div className="page-header">
-                <h1>Budget Manager</h1>
-                <p>Track AI costs, manage spending limits, and prevent overspending</p>
+                <h1>Risk Management</h1>
+                <p>Manage capital protection, exposure limits, and global trading status</p>
             </div>
 
-            {/* AI Spending Overview */}
+            {/* Risk Overview */}
             <div className="section">
                 <div className="grid-3">
                     <div className="card">
-                        <div className="card-header"><span className="card-title">Today&apos;s AI Spend</span></div>
-                        <div className={`card-value ${dailyPercent >= 90 ? 'stat-negative' : ''}`}>
-                            ${dailyAiSpend.toFixed(2)}
-                        </div>
+                        <div className="card-header"><span className="card-title">Current Exposure</span></div>
+                        <div className="card-value">${metrics.currentExposure.toFixed(2)}</div>
                         <div className="budget-progress">
                             <div className="progress-bar">
-                                <div className={`progress-fill ${progressClass(dailyPercent)}`} style={{ width: `${Math.min(dailyPercent, 100)}%` }} />
+                                <div className={`progress-fill ${progressClass(exposurePercent)}`} style={{ width: `${Math.min(exposurePercent, 100)}%` }} />
                             </div>
                             <div className="budget-labels">
-                                <span>{dailyPercent.toFixed(0)}% used</span>
-                                <span>Limit: ${config.maxDailyAiSpend.toFixed(2)}</span>
+                                <span>{exposurePercent.toFixed(0)}% used</span>
+                                <span>Limit: ${config.maxTotalExposureUsd.toFixed(0)}</span>
                             </div>
                         </div>
                     </div>
 
                     <div className="card">
-                        <div className="card-header"><span className="card-title">Monthly AI Spend</span></div>
-                        <div className={`card-value ${monthlyPercent >= 90 ? 'stat-negative' : ''}`}>
-                            ${monthlyAiSpend.toFixed(2)}
+                        <div className="card-header"><span className="card-title">Daily Loss Guard</span></div>
+                        <div className={`card-value ${metrics.dailyPnl < 0 ? 'stat-negative' : 'stat-positive'}`}>
+                            ${metrics.dailyPnl.toFixed(2)}
                         </div>
                         <div className="budget-progress">
                             <div className="progress-bar">
-                                <div className={`progress-fill ${progressClass(monthlyPercent)}`} style={{ width: `${Math.min(monthlyPercent, 100)}%` }} />
+                                <div className={`progress-fill ${progressClass(dailyLossPercent)}`} style={{ width: `${Math.min(dailyLossPercent, 100)}%` }} />
                             </div>
                             <div className="budget-labels">
-                                <span>{monthlyPercent.toFixed(0)}% used</span>
-                                <span>Limit: ${config.maxMonthlyAiSpend.toFixed(2)}</span>
+                                <span>{dailyLossPercent.toFixed(0)}% of loss limit</span>
+                                <span>Limit: ${config.maxDailyLossUsd.toFixed(0)}</span>
                             </div>
                         </div>
                     </div>
 
                     <div className="card">
-                        <div className="card-header"><span className="card-title">Total Trade Spend</span></div>
-                        <div className="card-value">${totalTradeSpend.toFixed(2)}</div>
+                        <div className="card-header"><span className="card-title">Weekly Loss Guard</span></div>
+                        <div className={`card-value ${metrics.weeklyPnl < 0 ? 'stat-negative' : 'stat-positive'}`}>
+                            ${metrics.weeklyPnl.toFixed(2)}
+                        </div>
                         <div className="budget-progress">
                             <div className="progress-bar">
-                                <div className={`progress-fill ${progressClass(tradePercent)}`} style={{ width: `${Math.min(tradePercent, 100)}%` }} />
+                                <div className={`progress-fill ${progressClass(weeklyLossPercent)}`} style={{ width: `${Math.min(weeklyLossPercent, 100)}%` }} />
                             </div>
                             <div className="budget-labels">
-                                <span>{tradePercent.toFixed(0)}% used</span>
-                                <span>Limit: ${config.maxTotalTradeSpend.toFixed(2)}</span>
+                                <span>{weeklyLossPercent.toFixed(0)}% of loss limit</span>
+                                <span>Limit: ${config.maxWeeklyLossUsd.toFixed(0)}</span>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* AI Usage Stats */}
+            {/* Strategy Stats */}
             <div className="section">
                 <div className="grid-2">
                     <div className="card">
-                        <div className="card-header"><span className="card-title">AI Usage This Month</span></div>
-                        <div className="metric-row"><span className="metric-label">API Calls</span><span className="metric-value">{monthlyAiCalls.toLocaleString()}</span></div>
-                        <div className="metric-row"><span className="metric-label">Total Tokens</span><span className="metric-value">{monthlyTokens.toLocaleString()}</span></div>
-                        <div className="metric-row"><span className="metric-label">Avg Cost per Call</span><span className="metric-value">${monthlyAiCalls > 0 ? (monthlyAiSpend / monthlyAiCalls).toFixed(4) : '0.00'}</span></div>
+                        <div className="card-header"><span className="card-title">Trading Status</span></div>
+                        <div className="metric-row"><span className="metric-label">Trades Today</span><span className="metric-value">{metrics.todayTrades}</span></div>
                         <div className="metric-row">
-                            <span className="metric-label">AI Spending</span>
+                            <span className="metric-label">Execution Status</span>
                             <span className="metric-value">
-                                <span className={`badge ${config.aiSpendingPaused ? 'badge-danger' : 'badge-success'}`}>
-                                    {config.aiSpendingPaused ? '⏸ Paused' : '▶ Active'}
+                                <span className={`badge ${config.tradingPaused ? 'badge-danger' : 'badge-success'}`}>
+                                    {config.tradingPaused ? '⏸ PAUSED' : '▶ ACTIVE'}
                                 </span>
                             </span>
                         </div>
+                        <div className="metric-row"><span className="metric-label">Risk Check Latency</span><span className="metric-value">~12ms</span></div>
                     </div>
 
                     <div className="card">
-                        <div className="card-header"><span className="card-title">Cost by Purpose</span></div>
-                        {purposeBreakdown.length === 0 ? (
-                            <div className="empty-state" style={{ padding: '24px 0' }}>
-                                <p style={{ fontSize: '0.85rem' }}>No AI costs recorded yet</p>
-                            </div>
-                        ) : (
-                            purposeBreakdown.map(p => {
-                                const pct = monthlyAiSpend > 0 ? ((p._sum.costUsd || 0) / monthlyAiSpend) * 100 : 0;
-                                return (
-                                    <div key={p.purpose} style={{ marginBottom: 12 }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: 4 }}>
-                                            <span style={{ color: 'var(--text-secondary)' }}>{p.purpose.replace(/_/g, ' ')}</span>
-                                            <span style={{ fontWeight: 600 }}>${(p._sum.costUsd || 0).toFixed(2)} ({pct.toFixed(0)}%)</span>
-                                        </div>
-                                        <div className="progress-bar" style={{ height: 6 }}>
-                                            <div style={{
-                                                height: '100%', width: `${pct}%`, borderRadius: 'inherit',
-                                                background: purposeColors[p.purpose] || 'var(--accent-primary)',
-                                            }} />
-                                        </div>
-                                    </div>
-                                );
-                            })
-                        )}
+                        <div className="card-header"><span className="card-title">Capital Overview</span></div>
+                        <div className="metric-row"><span className="metric-label">Daily PnL</span><span className={`metric-value ${metrics.dailyPnl >= 0 ? 'stat-positive' : 'stat-negative'}`}>${metrics.dailyPnl.toFixed(2)}</span></div>
+                        <div className="metric-row"><span className="metric-label">Weekly PnL</span><span className={`metric-value ${metrics.weeklyPnl >= 0 ? 'stat-positive' : 'stat-negative'}`}>${metrics.weeklyPnl.toFixed(2)}</span></div>
+                        <div className="metric-row"><span className="metric-label">Safety Buffer</span><span className="metric-value">${(config.maxDailyLossUsd - metrics.dailyLoss).toFixed(2)}</span></div>
                     </div>
                 </div>
             </div>
 
-            {/* Budget Configuration */}
+            {/* Risk Configuration */}
             <div className="section">
                 <div className="card">
                     <div className="card-header">
-                        <span className="card-title">Budget Configuration</span>
+                        <span className="card-title">Risk Configuration</span>
                         {!editing ? (
-                            <button className="btn btn-outline btn-sm" onClick={() => setEditConfig({ ...config })}>✏️ Edit Limits</button>
+                            <button className="btn btn-outline btn-sm" onClick={() => setEditConfig({ ...config })}>✏️ Edit Guards</button>
                         ) : (
                             <div style={{ display: 'flex', gap: 8 }}>
                                 <button className="btn btn-primary btn-sm" onClick={saveConfig} disabled={saving}>
-                                    {saving ? '...' : '💾 Save'}
+                                    {saving ? '...' : '💾 Save Changes'}
                                 </button>
                                 <button className="btn btn-ghost btn-sm" onClick={() => setEditConfig(null)}>Cancel</button>
                             </div>
@@ -232,10 +188,15 @@ export default function BudgetPage() {
 
                     <div className="grid-2" style={{ gap: 16 }}>
                         {[
-                            { key: 'maxDailyAiSpend', label: 'Max Daily AI Spend ($)' },
-                            { key: 'maxMonthlyAiSpend', label: 'Max Monthly AI Spend ($)' },
-                            { key: 'maxTotalTradeSpend', label: 'Max Total Trade Spend ($)' },
-                            { key: 'maxTradeSize', label: 'Max Single Trade Size ($)' },
+                            { key: 'maxDailyLossUsd', label: 'Max Daily Loss ($)' },
+                            { key: 'maxWeeklyLossUsd', label: 'Max Weekly Loss ($)' },
+                            { key: 'maxTotalExposureUsd', label: 'Max Total Exposure ($)' },
+                            { key: 'maxTradeSizeUsd', label: 'Max Single Trade Size ($)' },
+                            { key: 'minConfidence', label: 'Min AI Confidence (0-1)' },
+                            { key: 'estimatedSlippagePercent', label: 'Est. Slippage (%)' },
+                            { key: 'minLiquidityUsd', label: 'Min Liquidity ($)' },
+                            { key: 'minPriceThreshold', label: 'Min Price (0-1)' },
+                            { key: 'maxPriceThreshold', label: 'Max Price (0-1)' },
                             { key: 'alertThresholdPercent', label: 'Alert Threshold (%)' },
                         ].map(field => (
                             <div key={field.key} className="metric-row" style={{ padding: '8px 0' }}>
@@ -257,16 +218,16 @@ export default function BudgetPage() {
                         ))}
 
                         <div className="metric-row" style={{ padding: '8px 0' }}>
-                            <span className="metric-label">Pause AI Spending</span>
+                            <span className="metric-label">Master Trading Pause</span>
                             {editing ? (
                                 <div className="toggle-switch">
-                                    <input type="checkbox" checked={cfg.aiSpendingPaused}
-                                        onChange={e => setEditConfig(prev => prev ? { ...prev, aiSpendingPaused: e.target.checked } : null)} />
+                                    <input type="checkbox" checked={cfg.tradingPaused}
+                                        onChange={e => setEditConfig(prev => prev ? { ...prev, tradingPaused: e.target.checked } : null)} />
                                     <span className="toggle-slider" />
                                 </div>
                             ) : (
-                                <span className={`badge ${config.aiSpendingPaused ? 'badge-danger' : 'badge-success'}`}>
-                                    {config.aiSpendingPaused ? 'Paused' : 'Active'}
+                                <span className={`badge ${config.tradingPaused ? 'badge-danger' : 'badge-success'}`}>
+                                    {config.tradingPaused ? 'PAUSED' : 'ACTIVE'}
                                 </span>
                             )}
                         </div>
@@ -275,4 +236,18 @@ export default function BudgetPage() {
             </div>
         </div>
     );
+}
+
+interface BudgetConfig {
+    maxDailyLossUsd: number;
+    maxWeeklyLossUsd: number;
+    maxTotalExposureUsd: number;
+    maxTradeSizeUsd: number;
+    minConfidence: number;
+    estimatedSlippagePercent: number;
+    minLiquidityUsd: number;
+    minPriceThreshold: number;
+    maxPriceThreshold: number;
+    alertThresholdPercent: number;
+    tradingPaused: boolean;
 }

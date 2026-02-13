@@ -16,6 +16,10 @@ export abstract class BaseAgent {
     abstract readonly strategyId: string;
     abstract readonly strategyName: string;
 
+    get name(): string {
+        return this.strategyName;
+    }
+
     /**
      * Analyze a market and produce a trade signal.
      */

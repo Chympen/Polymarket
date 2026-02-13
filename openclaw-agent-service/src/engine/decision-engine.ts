@@ -5,6 +5,7 @@ import {
     getDatabase,
     AIDecisionInput,
     AIDecisionOutput,
+    BudgetConfig,
 } from 'shared-lib';
 
 import { MemoryService } from '../services/memory.service';
@@ -41,8 +42,6 @@ export class DecisionEngine {
      * Analyze a market using LLM and produce a trade decision.
      */
     async analyze(input: AIDecisionInput): Promise<AIDecisionOutput> {
-        const config = getConfig();
-
         // Retrieve long-term memory / corruption notes
         const memoryContext = await this.memory.buildMemoryContext(
             input.marketSnapshot.question,
@@ -52,50 +51,14 @@ export class DecisionEngine {
         // Build the prompt with memory injection
         const prompt = this.buildPrompt(input, memoryContext);
 
-        // ── Load Dynamic Budget Config ──
+        // ── Load Dynamic Budget/Risk Config ──
         const budgetConfig = await this.db.budgetConfig.findFirst();
-        const budget = budgetConfig || {
-            maxDailyAiSpend: 10,
-            maxMonthlyAiSpend: 200,
-            aiSpendingPaused: false
-        };
+        const risk = budgetConfig || { tradingPaused: false };
 
-        // ── Check 0: Budget Pause ──
-        if (budget.aiSpendingPaused) {
-            this.log.info('AI spending is paused — using heuristic fallback');
-            return this.heuristicFallback(input);
-        }
-
-        // ── Check 1: Daily/Monthly Spending Limits ──
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-
-        const monthStart = new Date();
-        monthStart.setDate(1);
-        monthStart.setHours(0, 0, 0, 0);
-
-        const [dailyCosts, monthlyCosts] = await Promise.all([
-            this.db.aiCostLog.aggregate({
-                where: { createdAt: { gte: todayStart } },
-                _sum: { costUsd: true }
-            }),
-            this.db.aiCostLog.aggregate({
-                where: { createdAt: { gte: monthStart } },
-                _sum: { costUsd: true }
-            })
-        ]);
-
-        const dailySpend = dailyCosts._sum.costUsd || 0;
-        const monthlySpend = monthlyCosts._sum.costUsd || 0;
-
-        if (dailySpend >= budget.maxDailyAiSpend) {
-            this.log.warn({ dailySpend, limit: budget.maxDailyAiSpend }, 'Daily AI budget limit reached — falling back to heuristic');
-            return this.heuristicFallback(input);
-        }
-
-        if (monthlySpend >= budget.maxMonthlyAiSpend) {
-            this.log.warn({ monthlySpend, limit: budget.maxMonthlyAiSpend }, 'Monthly AI budget limit reached — falling back to heuristic');
-            return this.heuristicFallback(input);
+        // ── Global Pause Check ──
+        if ((risk as any).tradingPaused) {
+            this.log.info('Trading is globally paused via risk controls — skip prompt');
+            return { trade: false, side: 'YES', confidence: 0, positionSizeUsd: 0, reasoning: 'Trading paused' };
         }
 
         // If no LLM configured, use fallback heuristic
@@ -108,11 +71,11 @@ export class DecisionEngine {
 
         try {
             const response = await this.openai.chat.completions.create({
-                model: config.LLM_MODEL,
+                model: getConfig().LLM_MODEL,
                 messages: [
                     {
                         role: 'system',
-                        content: this.getSystemPrompt(),
+                        content: this.getSystemPrompt(budgetConfig),
                     },
                     {
                         role: 'user',
@@ -133,31 +96,8 @@ export class DecisionEngine {
 
             const decision = this.parseDecision(content);
 
-            // ── Calculate and Log AI Cost ──
-            const usage = response.usage;
-            let costUsd = 0;
-            if (usage) {
-                // Approximate cost for GPT-4o (adjust based on model if needed)
-                // $5.00 / 1M input tokens, $15.00 / 1M output tokens
-                const inputCost = (usage.prompt_tokens / 1_000_000) * 5.0;
-                const outputCost = (usage.completion_tokens / 1_000_000) * 15.0;
-                costUsd = inputCost + outputCost;
-
-                await this.db.aiCostLog.create({
-                    data: {
-                        model: config.LLM_MODEL,
-                        promptTokens: usage.prompt_tokens,
-                        completionTokens: usage.completion_tokens,
-                        totalTokens: usage.total_tokens,
-                        costUsd: costUsd,
-                        purpose: 'trade_decision',
-                        relatedMarketId: input.marketSnapshot.conditionId
-                    }
-                }).catch(err => this.log.warn({ err }, 'Failed to log AI cost'));
-            }
-
             // Log the decision
-            await this.logDecision(input, decision, prompt, config.LLM_MODEL, latencyMs);
+            await this.logDecision(input, decision, prompt, getConfig().LLM_MODEL, latencyMs);
 
             this.log.info(
                 {
@@ -185,7 +125,13 @@ export class DecisionEngine {
     /**
      * System prompt defining the AI's role and output format.
      */
-    private getSystemPrompt(): string {
+    private getSystemPrompt(config: BudgetConfig | null): string {
+        const minConfidence = config?.minConfidence ?? 0.55;
+        const slippage = config?.estimatedSlippagePercent ?? 3.5;
+        const minLiquidity = config?.minLiquidityUsd ?? 1000;
+        const maxPrice = config?.maxPriceThreshold ?? 0.92;
+        const minPrice = config?.minPriceThreshold ?? 0.08;
+
         return `You are an expert quantitative prediction market trader. You analyze market data and produce precise trading decisions.
 
 Your output MUST be valid JSON with this exact structure:
@@ -207,13 +153,13 @@ Decision framework:
 7. DECIDE whether to trade, which side, and with what confidence
 
 Key rules:
-- Only trade when you have a clear edge (confidence > 0.55)
-- Factor in slippage and fees (~2-5% round trip in prediction markets)
+- Only trade when you have a clear edge (confidence > ${minConfidence})
+- Factor in slippage and fees (~${slippage}% round trip in prediction markets)
 - Consider the time to market resolution
 - Be skeptical of extreme moves without fundamental catalysts
 - Size positions proportional to confidence (Kelly-inspired)
-- NEVER trade if the market is illiquid (< $1000 liquidity)
-- NEVER chase prices at extremes (>0.92 or <0.08)`;
+- NEVER trade if the market is illiquid (< $${minLiquidity} liquidity)
+- NEVER chase prices at extremes (>${maxPrice} or <${minPrice})`;
     }
 
     /**

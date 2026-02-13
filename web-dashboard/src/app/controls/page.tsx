@@ -9,6 +9,28 @@ interface ServiceHealth {
     uptime?: number;
     agents?: string[];
     address?: string;
+    schedule?: string;
+}
+
+const PRESETS = [
+    { name: '1 Min', pattern: '*/1 * * * *' },
+    { name: '5 Mins', pattern: '*/5 * * * *' },
+    { name: '15 Mins', pattern: '*/15 * * * *' },
+    { name: '1 Hour', pattern: '0 * * * *' },
+    { name: 'Daily', pattern: '0 0 * * *' },
+];
+
+function describeCron(pattern: string) {
+    if (pattern === '*/1 * * * *') return 'Runs every minute';
+    if (pattern === '*/5 * * * *') return 'Runs every 5 minutes';
+    if (pattern === '*/15 * * * *') return 'Runs every 15 minutes';
+    if (pattern === '0 * * * *') return 'Runs at the start of every hour';
+    if (pattern === '0 0 * * *') return 'Runs once a day at midnight';
+
+    const match = pattern.match(/^\*\/(\d+)\s\*\s\*\s\*\s\*$/);
+    if (match) return `Runs every ${match[1]} minutes`;
+
+    return 'Custom schedule pattern';
 }
 
 export default function ControlsPage() {
@@ -16,6 +38,9 @@ export default function ControlsPage() {
     const [loading, setLoading] = useState(true);
     const [triggerLoading, setTriggerLoading] = useState(false);
     const [reflectLoading, setReflectLoading] = useState(false);
+    const [scheduleLoading, setScheduleLoading] = useState(false);
+    const [schedule, setSchedule] = useState('');
+    const [showCustomCron, setShowCustomCron] = useState(false);
     const [lastAction, setLastAction] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
 
     const fetchHealth = useCallback(async () => {
@@ -24,6 +49,9 @@ export default function ControlsPage() {
             if (res.ok) {
                 const data = await res.json();
                 setServices(data.services);
+                if (data.services.agent?.schedule) {
+                    setSchedule(data.services.agent.schedule);
+                }
             }
         } catch (e) {
             console.error('Health fetch error:', e);
@@ -79,6 +107,29 @@ export default function ControlsPage() {
             setLastAction({ message: '❌ Failed to connect to agent service', type: 'error' });
         } finally {
             setReflectLoading(false);
+        }
+    }
+
+    async function saveSchedule() {
+        setScheduleLoading(true);
+        setLastAction(null);
+        try {
+            const res = await fetch('/api/controls', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'setSchedule', schedule }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                setLastAction({ message: '✅ Schedule updated successfully!', type: 'success' });
+                fetchHealth();
+            } else {
+                setLastAction({ message: `❌ ${data.error || 'Failed to update schedule'}`, type: 'error' });
+            }
+        } catch {
+            setLastAction({ message: '❌ Failed to connect to agent service', type: 'error' });
+        } finally {
+            setScheduleLoading(false);
         }
     }
 
@@ -175,17 +226,71 @@ export default function ControlsPage() {
                 </div>
             </div>
 
-            {/* Auto Schedule Info */}
             <div className="section">
                 <div className="card">
-                    <div className="card-header"><span className="card-title">Automated Schedule</span></div>
-                    <div className="metric-row"><span className="metric-label">Trading Cycle</span><span className="metric-value">Every 5 minutes (cron)</span></div>
-                    <div className="metric-row"><span className="metric-label">Schedule Pattern</span><span className="metric-value" style={{ fontFamily: 'monospace' }}>*/5 * * * *</span></div>
-                    <div className="metric-row">
-                        <span className="metric-label">Status</span>
-                        <span className={`badge ${services.agent?.status === 'online' ? 'badge-success' : 'badge-danger'}`}>
-                            {services.agent?.status === 'online' ? '✅ Running' : '❌ Not Active (Agent Offline)'}
+                    <div className="card-header">
+                        <span className="card-title">Automated Trading Schedule</span>
+                        <span className={`badge ${services.agent?.status === 'online' ? 'badge-success' : 'badge-danger'}`} style={{ marginLeft: 'auto' }}>
+                            {services.agent?.status === 'online' ? 'Active' : 'Offline'}
                         </span>
+                    </div>
+
+                    <div style={{ padding: '20px 0' }}>
+                        <div style={{ marginBottom: 20 }}>
+                            <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 8, fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                Quick Presets
+                            </p>
+                            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                                {PRESETS.map(p => (
+                                    <button
+                                        key={p.pattern}
+                                        className={`btn btn-sm ${schedule === p.pattern ? 'btn-primary' : 'btn-outline'}`}
+                                        onClick={() => setSchedule(p.pattern)}
+                                        disabled={scheduleLoading || services.agent?.status !== 'online'}
+                                    >
+                                        {p.name}
+                                    </button>
+                                ))}
+                                <button
+                                    className={`btn btn-sm ${showCustomCron ? 'btn-primary' : 'btn-outline'}`}
+                                    onClick={() => setShowCustomCron(!showCustomCron)}
+                                >
+                                    {showCustomCron ? 'Hide Custom' : 'Custom Cron'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {showCustomCron && (
+                            <div style={{ marginBottom: 20, padding: 16, background: 'var(--bg-secondary)', borderRadius: 8 }}>
+                                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: 12 }}>
+                                    Enter a standard 5-part cron expression (e.g., <code style={{ color: 'var(--color-primary)' }}>*/15 * * * *</code>)
+                                </p>
+                                <div style={{ display: 'flex', gap: 12 }}>
+                                    <input
+                                        type="text"
+                                        className="input"
+                                        style={{ maxWidth: 200, fontFamily: 'monospace', letterSpacing: '0.1em' }}
+                                        value={schedule}
+                                        onChange={(e) => setSchedule(e.target.value)}
+                                        placeholder="*/5 * * * *"
+                                    />
+                                </div>
+                            </div>
+                        )}
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', background: 'var(--color-success-bg)', borderRadius: 8, border: '1px solid var(--color-success-border)' }}>
+                            <div>
+                                <p style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>{describeCron(schedule)}</p>
+                                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 4 }}>Pattern: {schedule}</p>
+                            </div>
+                            <button
+                                className="btn btn-primary"
+                                onClick={saveSchedule}
+                                disabled={scheduleLoading || !schedule || services.agent?.status !== 'online' || schedule === services.agent?.schedule}
+                            >
+                                {scheduleLoading ? 'Saving...' : 'Apply Schedule'}
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>

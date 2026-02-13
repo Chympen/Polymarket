@@ -20,17 +20,27 @@ export default function RiskPage() {
     const [dailyPnlPercent, setDailyPnlPercent] = useState(0);
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
+    const [config, setConfig] = useState<any>(null);
 
     async function fetchRisk() {
         try {
-            const res = await fetch('/api/risk');
-            if (res.ok) {
-                const data = await res.json();
+            const [riskRes, budgetRes] = await Promise.all([
+                fetch('/api/risk'),
+                fetch('/api/budget')
+            ]);
+
+            if (riskRes.ok) {
+                const data = await riskRes.json();
                 setRiskEvents(data.riskEvents || []);
                 setKillSwitchActive(data.killSwitchActive);
                 setCapitalPreservation(data.capitalPreservation);
                 setMaxDrawdown(data.maxDrawdown);
                 setDailyPnlPercent(data.dailyPnlPercent);
+            }
+
+            if (budgetRes.ok) {
+                const bData = await budgetRes.json();
+                setConfig(bData.config);
             }
         } catch (e) {
             console.error('Risk fetch error:', e);
@@ -159,13 +169,12 @@ export default function RiskPage() {
             {/* Risk Limits Reference */}
             <div className="section">
                 <div className="card">
-                    <div className="card-header"><span className="card-title">Risk Limits</span></div>
-                    <div className="metric-row"><span className="metric-label">Max Trade Size</span><span className="metric-value">2% of bankroll</span></div>
-                    <div className="metric-row"><span className="metric-label">Max Market Exposure</span><span className="metric-value">10% of capital</span></div>
-                    <div className="metric-row"><span className="metric-label">Max Daily Drawdown</span><span className="metric-value">3% (kill switch)</span></div>
-                    <div className="metric-row"><span className="metric-label">Min Confidence</span><span className="metric-value">55%</span></div>
-                    <div className="metric-row"><span className="metric-label">Max Positions</span><span className="metric-value">20</span></div>
-                    <div className="metric-row"><span className="metric-label">Max Slippage</span><span className="metric-value">200 bps</span></div>
+                    <div className="card-header"><span className="card-title">Global Risk Limits</span></div>
+                    <div className="metric-row"><span className="metric-label">Max Daily Loss</span><span className="metric-value">{config ? `$${config.maxDailyLossUsd}` : '...'}</span></div>
+                    <div className="metric-row"><span className="metric-label">Max Weekly Loss</span><span className="metric-value">{config ? `$${config.maxWeeklyLossUsd}` : '...'}</span></div>
+                    <div className="metric-row"><span className="metric-label">Max Total Exposure</span><span className="metric-value">{config ? `$${config.maxTotalExposureUsd}` : '...'}</span></div>
+                    <div className="metric-row"><span className="metric-label">Max Single Trade Size</span><span className="metric-value">{config ? `$${config.maxTradeSizeUsd}` : '...'}</span></div>
+                    <div className="metric-row"><span className="metric-label">Drawdown Kill Switch</span><span className="metric-value">3.00%</span></div>
                 </div>
             </div>
 

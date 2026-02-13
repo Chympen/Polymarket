@@ -8,61 +8,62 @@ export async function GET() {
     try {
         const config = await prisma.budgetConfig.findFirst();
 
-        const todayStart = new Date();
+        const now = new Date();
+        const todayStart = new Date(now);
         todayStart.setHours(0, 0, 0, 0);
 
-        const monthStart = new Date();
-        monthStart.setDate(1);
-        monthStart.setHours(0, 0, 0, 0);
+        const weekStart = new Date(now);
+        weekStart.setDate(now.getDate() - now.getDay());
+        weekStart.setHours(0, 0, 0, 0);
 
-        const [dailyCosts, monthlyCosts, recentCosts] = await Promise.all([
-            prisma.aiCostLog.aggregate({
-                where: { createdAt: { gte: todayStart } },
-                _sum: { costUsd: true, totalTokens: true },
-                _count: true,
+        // Fetch metrics in parallel
+        const [dailyPnl, weeklyPnl, openPositions, todayTrades] = await Promise.all([
+            prisma.trade.aggregate({
+                where: {
+                    status: 'FILLED',
+                    createdAt: { gte: todayStart }
+                },
+                _sum: { pnlUsd: true }
             }),
-            prisma.aiCostLog.aggregate({
-                where: { createdAt: { gte: monthStart } },
-                _sum: { costUsd: true, totalTokens: true },
-                _count: true,
+            prisma.trade.aggregate({
+                where: {
+                    status: 'FILLED',
+                    createdAt: { gte: weekStart }
+                },
+                _sum: { pnlUsd: true }
             }),
-            prisma.aiCostLog.findMany({
-                orderBy: { createdAt: 'desc' },
-                take: 50,
+            prisma.position.findMany({
+                where: { status: 'OPEN' }
             }),
+            prisma.trade.count({
+                where: { createdAt: { gte: todayStart } }
+            })
         ]);
 
-        // Get per-purpose breakdown
-        const purposeBreakdown = await prisma.aiCostLog.groupBy({
-            by: ['purpose'],
-            where: { createdAt: { gte: monthStart } },
-            _sum: { costUsd: true },
-            _count: true,
-        });
-
-        // Get total trade spend
-        const totalTradeSpend = await prisma.trade.aggregate({
-            where: { status: 'FILLED' },
-            _sum: { sizeUsd: true },
-        });
+        const currentExposure = openPositions.reduce((sum, p) => sum + p.sizeUsd, 0);
 
         return successResponse({
             config: config || {
-                maxDailyAiSpend: 10,
-                maxMonthlyAiSpend: 200,
-                maxTotalTradeSpend: 1000,
-                maxTradeSize: 50,
+                maxDailyLossUsd: 50,
+                maxWeeklyLossUsd: 200,
+                maxTotalExposureUsd: 1000,
+                maxTradeSizeUsd: 50,
+                minConfidence: 0.55,
+                estimatedSlippagePercent: 3.5,
+                minLiquidityUsd: 1000,
+                minPriceThreshold: 0.08,
+                maxPriceThreshold: 0.92,
                 alertThresholdPercent: 80,
-                aiSpendingPaused: false,
+                tradingPaused: false,
             },
-            dailyAiSpend: dailyCosts._sum.costUsd || 0,
-            dailyAiCalls: dailyCosts._count || 0,
-            monthlyAiSpend: monthlyCosts._sum.costUsd || 0,
-            monthlyAiCalls: monthlyCosts._count || 0,
-            monthlyTokens: monthlyCosts._sum.totalTokens || 0,
-            purposeBreakdown,
-            totalTradeSpend: totalTradeSpend._sum.sizeUsd || 0,
-            recentCosts,
+            metrics: {
+                dailyLoss: Math.abs(Math.min(0, dailyPnl._sum.pnlUsd || 0)),
+                weeklyLoss: Math.abs(Math.min(0, weeklyPnl._sum.pnlUsd || 0)),
+                dailyPnl: dailyPnl._sum.pnlUsd || 0,
+                weeklyPnl: weeklyPnl._sum.pnlUsd || 0,
+                currentExposure,
+                todayTrades,
+            }
         });
     } catch (error) {
         return handleApiError(error as Error, 'Budget API (GET)');

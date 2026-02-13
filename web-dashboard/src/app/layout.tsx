@@ -19,19 +19,20 @@ const navItems = [
       { href: '/trades', label: 'Trade History', icon: '💹' },
       { href: '/positions', label: 'Positions', icon: '📌' },
       { href: '/performance', label: 'Performance', icon: '📈' },
+      { href: '/strategies', label: 'Strategies', icon: '🎯' },
     ],
   },
   {
     section: 'Intelligence',
     items: [
-      { href: '/intelligence', label: 'AI Intelligence', icon: '🧠' },
+      { href: '/intelligence', label: 'Smart Insights', icon: '🧠' },
     ],
   },
   {
-    section: 'Risk & Budget',
+    section: 'Risk & Capital',
     items: [
       { href: '/risk', label: 'Risk Management', icon: '🛡️' },
-      { href: '/budget', label: 'Budget Manager', icon: '💰' },
+      { href: '/budget', label: 'Capital Controls', icon: '🔒' },
     ],
   },
   {

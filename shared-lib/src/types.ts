@@ -49,6 +49,7 @@ export interface OrderBookLevel {
 export interface PortfolioState {
     totalCapital: number;
     availableCapital: number;
+    initialCapital: number;
     deployedCapital: number;
     totalPnl: number;
     dailyPnl: number;
@@ -71,6 +72,7 @@ export interface PositionState {
     currentPrice: number;
     unrealizedPnl: number;
     realizedPnl: number;
+    userStrategyId?: string;
     createdAt: string;
 }
 

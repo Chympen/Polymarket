@@ -16,7 +16,7 @@ interface Trade {
     status: string;
     strategyId: string | null;
     confidence: number | null;
-    reasoning: string | null;
+    pnlUsd: number | null;
     createdAt: string;
     market?: { question: string; conditionId: string };
 }
@@ -121,6 +121,7 @@ export default function TradesPage() {
                                 <th>Filled Price</th>
                                 <th>Slippage</th>
                                 <th>Strategy</th>
+                                <th>PnL</th>
                                 <th>Confidence</th>
                                 <th>Status</th>
                                 <th>Time</th>
@@ -143,6 +144,9 @@ export default function TradesPage() {
                                     <td>{t.filledPrice?.toFixed(4) || '—'}</td>
                                     <td>{t.slippage != null ? `${(t.slippage * 100).toFixed(1)}%` : '—'}</td>
                                     <td style={{ fontSize: '0.78rem' }}>{t.strategyId || '—'}</td>
+                                    <td style={{ fontWeight: 'bold', color: (t.pnlUsd || 0) > 0 ? '#22c55e' : (t.pnlUsd || 0) < 0 ? '#ef4444' : 'inherit' }}>
+                                        {t.pnlUsd != null ? `$${t.pnlUsd.toFixed(2)}` : '—'}
+                                    </td>
                                     <td>{t.confidence ? `${(t.confidence * 100).toFixed(0)}%` : '—'}</td>
                                     <td><span className={`badge ${statusBadge(t.status)}`}>{t.status}</span></td>
                                     <td style={{ fontSize: '0.78rem', whiteSpace: 'nowrap' }}>

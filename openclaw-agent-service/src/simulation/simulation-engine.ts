@@ -45,6 +45,7 @@ export class SimulationEngine {
         // Initialize portfolio
         let portfolio: PortfolioState = {
             totalCapital: config.initialCapital,
+            initialCapital: config.initialCapital,
             availableCapital: config.initialCapital,
             deployedCapital: 0,
             totalPnl: 0,

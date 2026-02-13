@@ -112,6 +112,35 @@ export default function DashboardPage() {
     }
   }
 
+  async function handleSetCapital() {
+    const amountStr = prompt('Enter new Paper Capital amount (NOTE: This will RESET all paper trades/positions):', '10000');
+    if (!amountStr) return;
+
+    const amount = parseFloat(amountStr);
+    if (isNaN(amount) || amount <= 0) {
+      alert('Please enter a valid positive number.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'setPaperCapital', amount }),
+      });
+
+      if (res.ok) {
+        alert('Paper Capital set successfully! Portfolio has been reset.');
+        window.location.reload(); // Simple reload to refresh everything
+      } else {
+        alert('Failed to set capital.');
+      }
+    } catch (error) {
+      console.error('Error setting capital:', error);
+      alert('Error setting capital.');
+    }
+  }
+
   function formatUptime(seconds?: number) {
     if (!seconds) return '—';
     const h = Math.floor(seconds / 3600);
@@ -269,7 +298,24 @@ export default function DashboardPage() {
         <div className="grid-4">
           <div className="card">
             <div className="card-header">
-              <span className="card-title">Total Capital</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span className="card-title">Total Capital</span>
+                {isPaper && (
+                  <button
+                    onClick={handleSetCapital}
+                    title="Set Paper Capital (Resets Portfolio)"
+                    style={{
+                      border: 'none',
+                      background: 'none',
+                      cursor: 'pointer',
+                      fontSize: '1rem',
+                      padding: 0,
+                    }}
+                  >
+                    ✏️
+                  </button>
+                )}
+              </div>
               <span>💎</span>
             </div>
             <div className="card-value">{formatCurrency(portfolio?.totalCapital || 0)}</div>

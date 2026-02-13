@@ -45,6 +45,14 @@ export const agentApi = {
     toggle: () => safeFetch(`${AGENT_URL}/toggle`, { method: 'POST' }),
     toggleMode: () => safeFetch(`${AGENT_URL}/toggle-mode`, { method: 'POST' }),
     getPaperPortfolio: () => safeFetch(`${AGENT_URL}/paper-portfolio`),
+    resetPaperPortfolio: (amount: number) => safeFetch(`${AGENT_URL}/paper-portfolio/reset`, {
+        method: 'POST',
+        body: JSON.stringify({ amount })
+    }),
+    updateSchedule: (schedule: string) => safeFetch(`${AGENT_URL}/schedule`, {
+        method: 'POST',
+        body: JSON.stringify({ schedule })
+    }),
 };
 
 // ── Risk Guardian ──

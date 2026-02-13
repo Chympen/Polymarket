@@ -35,28 +35,31 @@ model Market {
 }
 
 model Trade {
-  id            String   @id @default(uuid())
-  marketId      String   @map("market_id")
-  side          String
-  type          String
-  direction     String
-  sizeUsd       Float    @map("size_usd")
-  price         Float
-  filledPrice   Float?   @map("filled_price")
-  filledSizeUsd Float?   @map("filled_size_usd")
-  slippage      Float?
-  gasUsed       Float?   @map("gas_used")
-  txHash        String?  @map("tx_hash")
-  status        String   @default("PENDING")
-  strategyId    String?  @map("strategy_id")
-  confidence    Float?
-  reasoning     String?
-  errorMessage  String?  @map("error_message")
-  retryCount    Int      @default(0) @map("retry_count")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-  isPaper       Boolean  @default(false) @map("is_paper")
-  market          Market       @relation(fields: [marketId], references: [conditionId])
+  id             String           @id @default(uuid())
+  marketId       String           @map("market_id")
+  side           String
+  type           String
+  direction      String
+  sizeUsd        Float            @map("size_usd")
+  price          Float
+  filledPrice    Float?           @map("filled_price")
+  filledSizeUsd  Float?           @map("filled_size_usd")
+  slippage       Float?
+  gasUsed        Float?           @map("gas_used")
+  txHash         String?          @map("tx_hash")
+  status         String           @default("PENDING")
+  strategyId     String?          @map("strategy_id")
+  confidence     Float?
+  reasoning      String?
+  errorMessage   String?          @map("error_message")
+  retryCount     Int              @default(0) @map("retry_count")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  isPaper        Boolean          @default(false) @map("is_paper")
+  userStrategyId String?          @map("user_strategy_id")
+  pnlUsd         Float?           @map("pnl_usd")
+  market         Market           @relation(fields: [marketId], references: [conditionId])
+  userStrategy   TradingStrategy? @relation(fields: [userStrategyId], references: [id])
 
   @@index([marketId])
   @@index([status])
@@ -65,19 +68,21 @@ model Trade {
 }
 
 model Position {
-  id            String   @id @default(uuid())
-  marketId      String   @map("market_id")
-  side          String
-  sizeUsd       Float    @map("size_usd")
-  avgEntryPrice Float    @map("avg_entry_price")
-  currentPrice  Float    @default(0) @map("current_price")
-  unrealizedPnl Float    @default(0) @map("unrealized_pnl")
-  realizedPnl   Float    @default(0) @map("realized_pnl")
-  status        String   @default("OPEN")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-  isPaper       Boolean  @default(false) @map("is_paper")
-  market          Market       @relation(fields: [marketId], references: [conditionId])
+  id             String           @id @default(uuid())
+  marketId       String           @map("market_id")
+  side           String
+  sizeUsd        Float            @map("size_usd")
+  avgEntryPrice  Float            @map("avg_entry_price")
+  currentPrice   Float            @default(0) @map("current_price")
+  unrealizedPnl  Float            @default(0) @map("unrealized_pnl")
+  realizedPnl    Float            @default(0) @map("realized_pnl")
+  status         String           @default("OPEN")
+  createdAt      DateTime         @default(now()) @map("created_at")
+  updatedAt      DateTime         @updatedAt @map("updated_at")
+  isPaper        Boolean          @default(false) @map("is_paper")
+  userStrategyId String?          @map("user_strategy_id")
+  market         Market           @relation(fields: [marketId], references: [conditionId])
+  userStrategy   TradingStrategy? @relation(fields: [userStrategyId], references: [id])
 
   @@unique([marketId, side])
   @@index([status])
@@ -100,6 +105,7 @@ model Portfolio {
   createdAt           DateTime @default(now()) @map("created_at")
   updatedAt           DateTime @updatedAt @map("updated_at")
   isPaper             Boolean  @default(false) @map("is_paper")
+  initialCapital      Float    @default(1000000) @map("initial_capital")
 
   @@index([snapshotDate])
   @@map("portfolio")
@@ -187,15 +193,21 @@ model RiskEvent {
 }
 
 model BudgetConfig {
-  id                    String   @id @default(uuid())
-  maxDailyAiSpend       Float    @default(10.0) @map("max_daily_ai_spend")
-  maxMonthlyAiSpend     Float    @default(200.0) @map("max_monthly_ai_spend")
-  maxTotalTradeSpend    Float    @default(1000.0) @map("max_total_trade_spend")
-  maxTradeSize          Float    @default(50.0) @map("max_trade_size")
-  alertThresholdPercent Float    @default(80.0) @map("alert_threshold_percent")
-  aiSpendingPaused      Boolean  @default(false) @map("ai_spending_paused")
-  createdAt             DateTime @default(now()) @map("created_at")
-  updatedAt             DateTime @updatedAt @map("updated_at")
+  id                       String   @id @default(uuid())
+  alertThresholdPercent    Float    @default(80.0) @map("alert_threshold_percent")
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+  cronSchedule             String   @default("*/5 * * * *") @map("cron_schedule")
+  estimatedSlippagePercent Float    @default(3.5) @map("estimated_slippage_percent")
+  maxDailyLossUsd          Float    @default(50.0) @map("max_daily_loss_usd")
+  maxPriceThreshold        Float    @default(0.92) @map("max_price_threshold")
+  maxTotalExposureUsd      Float    @default(1000.0) @map("max_total_exposure_usd")
+  maxTradeSizeUsd          Float    @default(50.0) @map("max_trade_size_usd")
+  maxWeeklyLossUsd         Float    @default(200.0) @map("max_weekly_loss_usd")
+  minConfidence            Float    @default(0.55) @map("min_confidence")
+  minLiquidityUsd          Float    @default(1000.0) @map("min_liquidity_usd")
+  minPriceThreshold        Float    @default(0.08) @map("min_price_threshold")
+  tradingPaused            Boolean  @default(false) @map("trading_paused")
 
   @@map("budget_config")
 }
@@ -307,4 +319,20 @@ model MarketRegimeSnapshot {
   @@index([snapshotDate])
   @@index([regime])
   @@map("market_regime_snapshots")
+}
+
+model TradingStrategy {
+  id                 String     @id @default(uuid())
+  name               String
+  description        String?
+  keywords           String[]
+  maxDailyTrades     Int        @default(5) @map("max_daily_trades")
+  active             Boolean    @default(true)
+  createdAt          DateTime   @default(now()) @map("created_at")
+  updatedAt          DateTime   @updatedAt @map("updated_at")
+  maxPositionSizeUsd Float      @default(100.0) @map("max_position_size_usd")
+  positions          Position[]
+  trades             Trade[]
+
+  @@map("trading_strategies")
 }

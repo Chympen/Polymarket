@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -57,11 +58,13 @@ let correlationService: CorrelationService;
 let isTradingActive = false; // Default to OFF as requested
 let isPaperTrading = process.env.PAPER_TRADING === 'true'; // Controlled by env var
 let isCycleRunning = false; // Prevent overlapping AI cycles
+let tradingJob: any = null; // Reference to the scheduled cron job
 
 // Paper Trading State
 let paperPortfolio: PortfolioState = {
     totalCapital: 1000000,
     availableCapital: 1000000,
+    initialCapital: 1000000,
     deployedCapital: 0,
     totalPnl: 0,
     dailyPnl: 0,
@@ -106,9 +109,9 @@ async function updatePaperPortfolio(markets: MarketSnapshot[]) {
 
     paperPortfolio.totalCapital = currentPortfolioValue;
     paperPortfolio.deployedCapital = deployed;
-    paperPortfolio.totalPnl = paperPortfolio.totalCapital - 1000000;
+    paperPortfolio.totalPnl = paperPortfolio.totalCapital - (paperPortfolio as any).initialCapital;
     paperPortfolio.dailyPnl = paperPortfolio.totalPnl;
-    paperPortfolio.dailyPnlPercent = (paperPortfolio.totalPnl / 1000000) * 100;
+    paperPortfolio.dailyPnlPercent = (paperPortfolio.totalPnl / paperPortfolio.initialCapital) * 100;
 
     // Persist portfolio snapshot
     await savePortfolioSnapshot(true);
@@ -126,6 +129,7 @@ async function savePortfolioSnapshot(isPaper: boolean) {
             data: {
                 totalCapital: portfolio.totalCapital,
                 availableCapital: portfolio.availableCapital,
+                initialCapital: portfolio.initialCapital,
                 deployedCapital: portfolio.deployedCapital,
                 totalPnl: portfolio.totalPnl,
                 dailyPnl: portfolio.dailyPnl,
@@ -147,6 +151,82 @@ async function savePortfolioSnapshot(isPaper: boolean) {
         log.error({ err }, 'Failed to save portfolio snapshot');
     }
 }
+
+/**
+ * Reset Paper Portfolio to a specific amount.
+ * Clears all paper trades, positions, and resets capital.
+ */
+async function resetPaperPortfolio(amount: number): Promise<void> {
+    log.info({ amount }, '♻️ Resetting Paper Portfolio...');
+
+    try {
+        const db = getDatabase();
+
+        // 1. Clear DB Records
+        await db.trade.deleteMany({ where: { isPaper: true } });
+        await db.position.deleteMany({ where: { isPaper: true } });
+        await db.portfolio.deleteMany({ where: { isPaper: true } });
+
+        // 2. Create new Initial Record
+        const newPortfolio = await db.portfolio.create({
+            data: {
+                isPaper: true,
+                totalCapital: amount,
+                availableCapital: amount,
+                initialCapital: amount,
+                deployedCapital: 0,
+                totalPnl: 0,
+                dailyPnl: 0,
+                dailyPnlPercent: 0,
+                highWaterMark: amount,
+                maxDrawdown: 0,
+                killSwitchActive: false,
+                capitalPreservation: false,
+                snapshotDate: new Date(),
+            }
+        });
+
+        // 3. Reset In-Memory State
+        paperPortfolio = {
+            totalCapital: newPortfolio.totalCapital,
+            availableCapital: newPortfolio.availableCapital,
+            initialCapital: newPortfolio.initialCapital,
+            deployedCapital: 0,
+            totalPnl: 0,
+            dailyPnl: 0,
+            dailyPnlPercent: 0,
+            highWaterMark: newPortfolio.highWaterMark,
+            maxDrawdown: 0,
+            killSwitchActive: false,
+            capitalPreservation: false,
+            positions: []
+        };
+
+        log.info('✅ Paper Portfolio reset successfully');
+    } catch (err) {
+        log.error({ err }, 'Failed to reset paper portfolio');
+        throw err;
+    }
+}
+
+/**
+ * Schedule or re-schedule the trading job.
+ */
+function scheduleTradingJob(pattern: string) {
+    if (tradingJob) {
+        log.info({ pattern: (tradingJob as any).pattern }, '🛑 Stopping existing trading job');
+        tradingJob.stop();
+    }
+
+    log.info({ pattern }, '⏰ Scheduling new trading job');
+    tradingJob = cron.schedule(pattern, () => {
+        log.info('⏰ Scheduled trading cycle triggered');
+        runTradingCycle().catch((err) =>
+            log.error({ error: err.message }, 'Scheduled trading cycle failed')
+        );
+    });
+}
+
 async function initializeServices() {
     log.info('Initializing agents and services...');
 
@@ -180,19 +260,11 @@ async function initializeServices() {
         if (savedPortfolio) {
             paperPortfolio.availableCapital = savedPortfolio.availableCapital;
             paperPortfolio.totalCapital = savedPortfolio.totalCapital;
+            paperPortfolio.initialCapital = savedPortfolio.initialCapital;
             paperPortfolio.deployedCapital = savedPortfolio.deployedCapital;
             paperPortfolio.totalPnl = savedPortfolio.totalPnl;
             paperPortfolio.dailyPnlPercent = savedPortfolio.dailyPnlPercent;
-            paperPortfolio.highWaterMark = Math.max(savedPortfolio.highWaterMark, 1000000);
-
-            // Ensure user gets the new $1M budget if they were on the old $1k budget
-            if (paperPortfolio.totalCapital < 500000) {
-                log.info('📈 Increasing paper budget to $1,000,000 target');
-                const diff = 1000000 - paperPortfolio.totalCapital;
-                paperPortfolio.availableCapital += diff;
-                paperPortfolio.totalCapital = 1000000;
-                paperPortfolio.highWaterMark = 1000000;
-            }
+            paperPortfolio.highWaterMark = Math.max(savedPortfolio.highWaterMark, paperPortfolio.initialCapital);
 
             log.info('✅ Paper portfolio state loaded from database');
         } else {
@@ -201,15 +273,17 @@ async function initializeServices() {
                 data: {
                     totalCapital: 1000000,
                     availableCapital: 1000000,
+                    initialCapital: 1000000,
                     deployedCapital: 0,
                     totalPnl: 0,
                     isPaper: true,
                     snapshotDate: new Date(),
                     highWaterMark: 1000000,
-                }
+                } as any
             });
             paperPortfolio.availableCapital = newPortfolio.availableCapital;
             paperPortfolio.totalCapital = newPortfolio.totalCapital;
+            paperPortfolio.initialCapital = newPortfolio.initialCapital;
             log.info('✅ Paper portfolio initialized');
         }
 
@@ -227,7 +301,8 @@ async function initializeServices() {
             currentPrice: p.currentPrice,
             unrealizedPnl: p.unrealizedPnl,
             realizedPnl: p.realizedPnl,
-            createdAt: p.createdAt.toISOString()
+            createdAt: p.createdAt.toISOString(),
+            initialCapital: (p as any).initialCapital
         }));
 
         if (paperPortfolio.positions.length > 0) {
@@ -266,6 +341,21 @@ async function runTradingCycle(): Promise<void> {
 
     isCycleRunning = true;
     try {
+        const db = getDatabase();
+
+        // ── Load Global Risk Config ──
+        const budgetConfig = await db.budgetConfig.findFirst();
+        const risk = budgetConfig || {
+            tradingPaused: false,
+            maxTotalExposureUsd: 1000,
+            maxTradeSizeUsd: 50
+        };
+
+        if ((risk as any).tradingPaused) {
+            log.info('⏸️ Trading cycle skipped: Global risk control PAUSED.');
+            isCycleRunning = false;
+            return;
+        }
 
         // Ensure services are initialized
         if (!metaAllocator) {
@@ -304,6 +394,16 @@ async function runTradingCycle(): Promise<void> {
         if (portfolio.killSwitchActive) {
             log.error('🚨 Kill switch active — skipping trading cycle');
             await logActivity('WARN', 'SYSTEM', 'Kill switch is ACTIVE. Skipping trading cycle.');
+            isCycleRunning = false;
+            return;
+        }
+
+        // Check Exposure Limit
+        const currentExposure = isPaperTrading ? paperPortfolio.deployedCapital : portfolio.deployedCapital;
+        if (currentExposure >= risk.maxTotalExposureUsd) {
+            log.warn({ currentExposure, limit: risk.maxTotalExposureUsd }, '⚠️ Global exposure limit reached — skipping new trades');
+            await logActivity('WARN', 'RISK', `Exposure limit reached ($${currentExposure.toFixed(0)} / $${risk.maxTotalExposureUsd.toFixed(0)}).`);
+            isCycleRunning = false;
             return;
         }
 
@@ -375,6 +475,68 @@ async function runTradingCycle(): Promise<void> {
                     processedMarketSummaries.push({ question: market.question, signals: signals.length, traded: false, outcome: 'ai_veto' });
                     continue;
                 }
+
+                // ── Strategy Trade Limit Check ──
+                // Find which strategy matched this market
+                const db = getDatabase();
+                const activeStrategies = await db.tradingStrategy.findMany({ where: { active: true } });
+                let matchingStrategy: any = null;
+
+                if (activeStrategies.length > 0) {
+                    matchingStrategy = activeStrategies.find((s: any) =>
+                        s.keywords.some((k: string) => market.question.toLowerCase().includes(k.toLowerCase()))
+                    );
+
+                    if (matchingStrategy) {
+                        // Check daily limit
+                        const todayStart = new Date();
+                        todayStart.setHours(0, 0, 0, 0);
+
+                        const dailyTrades = await db.trade.count({
+                            where: {
+                                userStrategyId: matchingStrategy.id,
+                                createdAt: { gte: todayStart }
+                            }
+                        });
+
+                        if (dailyTrades >= matchingStrategy.maxDailyTrades) {
+                            log.warn({ strategy: matchingStrategy.name, limit: matchingStrategy.maxDailyTrades }, '⚠️ Strategy daily trade limit reached');
+                            processedMarketSummaries.push({ question: market.question, signals: signals.length, traded: false, outcome: 'strategy_limit' });
+                            continue;
+                        }
+
+                        // Cap position size based on strategy limit
+                        if (consensus.positionSizeUsd > matchingStrategy.maxPositionSizeUsd) {
+                            log.info(
+                                {
+                                    strategy: matchingStrategy.name,
+                                    original: consensus.positionSizeUsd.toFixed(2),
+                                    capped: matchingStrategy.maxPositionSizeUsd.toFixed(2)
+                                },
+                                '📏 Capping trade size per strategy limit'
+                            );
+                            consensus.positionSizeUsd = matchingStrategy.maxPositionSizeUsd;
+                        }
+                    } else {
+                        // If strategies exist but none match, we shouldn't be here due to fetchActiveMarkets filtering, 
+                        // but as a safeguard, skip.
+                        log.warn({ market: market.question }, '⚠️ Market does not match any active strategy (safeguard)');
+                        continue;
+                    }
+                }
+
+                // Apply Global Trade Size Limit
+                if (consensus.positionSizeUsd > risk.maxTradeSizeUsd) {
+                    log.info(
+                        {
+                            original: consensus.positionSizeUsd.toFixed(2),
+                            capped: risk.maxTradeSizeUsd.toFixed(2)
+                        },
+                        '📏 Capping trade size per global risk limit'
+                    );
+                    consensus.positionSizeUsd = risk.maxTradeSizeUsd;
+                }
+
 
                 // Use AI confidence if higher/better? For now, stick to consensus but maybe average them
                 // const finalConfidence = (consensus.aggregateConfidence + aiDecision.confidence) / 2;
@@ -457,7 +619,8 @@ async function runTradingCycle(): Promise<void> {
                                 unrealizedPnl: 0,
                                 realizedPnl: 0,
                                 createdAt: new Date().toISOString(),
-                                id: pos?.id || `paper-${Math.random().toString(36).substring(2, 9)}`
+                                id: pos?.id || `paper-${Math.random().toString(36).substring(2, 9)}`,
+                                userStrategyId: matchingStrategy?.id
                             });
 
                             await logActivity('TRADE', 'PAPER', `[PAPER] Bought ${consensus.side} on "${market.question.slice(0, 30)}..." @ ${entryPrice.toFixed(2)}`, {
@@ -482,6 +645,7 @@ async function runTradingCycle(): Promise<void> {
                                     confidence: consensus.aggregateConfidence,
                                     reasoning: consensus.reasoning,
                                     isPaper: true,
+                                    userStrategyId: matchingStrategy?.id,
                                 }
                             }).catch((err: any) => log.error({ err }, 'Failed to record paper BUY in DB'));
                         } else {
@@ -541,6 +705,7 @@ async function runTradingCycle(): Promise<void> {
                                     confidence: consensus.aggregateConfidence,
                                     reasoning: consensus.reasoning,
                                     isPaper: true,
+                                    userStrategyId: matchingStrategy?.id,
                                 }
                             }).catch((err: any) => log.error({ err }, 'Failed to record paper SELL in DB'));
                         }
@@ -650,16 +815,30 @@ async function runTradingCycle(): Promise<void> {
  */
 async function fetchActiveMarkets(): Promise<MarketSnapshot[]> {
     const config = getConfig();
+    const db = getDatabase();
+
+    // 1. Load active strategies
+    const activeStrategies = await db.tradingStrategy.findMany({
+        where: { active: true }
+    });
+
+    if (activeStrategies.length === 0) {
+        log.info('😴 No active trading strategies defined. Skipping market fetch to honor strict strategy enforcement.');
+        await logActivity('INFO', 'SYSTEM', 'No active strategies. Skipping trading cycle.');
+        return [];
+    }
+
+    const keywords = activeStrategies.flatMap((s: any) => s.keywords.map((k: string) => k.toLowerCase()));
+    log.info({ count: activeStrategies.length, keywords: keywords }, '🎯 Filtering markets by active strategies');
 
     if (config.MODE === 'simulation') {
         // In simulation mode, load from database
-        const db = getDatabase();
         const dbMarkets = await db.market.findMany({
             where: { active: true },
             take: 50,
         });
 
-        return dbMarkets.map((m: { conditionId: string; questionId: string; question: string; priceYes: number; priceNo: number; volume24h: number; liquidity: number; endDate: Date | null }) => ({
+        const markets = dbMarkets.map((m: { conditionId: string; questionId: string; question: string; priceYes: number; priceNo: number; volume24h: number; liquidity: number; endDate: Date | null }) => ({
             conditionId: m.conditionId,
             questionId: m.questionId,
             question: m.question,
@@ -672,6 +851,8 @@ async function fetchActiveMarkets(): Promise<MarketSnapshot[]> {
             priceHistory: [],
             orderBookDepth: [],
         }));
+
+        return markets.filter(m => keywords.some((k: string) => m.question.toLowerCase().includes(k)));
     }
 
     try {
@@ -679,36 +860,38 @@ async function fetchActiveMarkets(): Promise<MarketSnapshot[]> {
             params: {
                 active: true,
                 closed: false,
-                limit: 50,
+                limit: 100, // Fetch more to allow for filtering
                 order: 'volume24hr',
                 ascending: false,
             },
             timeout: 15_000,
         });
 
-        const snapshots: MarketSnapshot[] = response.data.map((m: any, i: number) => {
-            const prices = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices) : m.outcomePrices;
-            const priceYes = Number(prices?.[0] || m.bestBid || 0.5);
-            const priceNo = Number(prices?.[1] || 1 - priceYes);
+        const snapshots: MarketSnapshot[] = response.data
+            .map((m: any, i: number) => {
+                const prices = typeof m.outcomePrices === 'string' ? JSON.parse(m.outcomePrices) : m.outcomePrices;
+                const priceYes = Number(prices?.[0] || m.bestBid || 0.5);
+                const priceNo = Number(prices?.[1] || 1 - priceYes);
 
-            return {
-                conditionId: String(m.conditionId || m.condition_id || ''),
-                questionId: String(m.questionId || m.question_id || ''),
-                question: String(m.question || ''),
-                priceYes,
-                priceNo,
-                volume24h: Number(m.volume24hr || m.volume || 0),
-                liquidity: Number(m.liquidity || 0),
-                endDate: m.endDate ? String(m.endDate) : null,
-                spread: Number(m.spread || 0),
-                priceHistory: [],
-                orderBookDepth: [],
-            };
-        });
+                return {
+                    conditionId: String(m.conditionId || m.condition_id || ''),
+                    questionId: String(m.questionId || m.question_id || ''),
+                    question: String(m.question || ''),
+                    priceYes,
+                    priceNo,
+                    volume24h: Number(m.volume24hr || m.volume || 0),
+                    liquidity: Number(m.liquidity || 0),
+                    endDate: m.endDate ? String(m.endDate) : null,
+                    spread: Number(m.spread || 0),
+                    priceHistory: [],
+                    orderBookDepth: [],
+                };
+            })
+            .filter((m: MarketSnapshot) => keywords.some((k: string) => m.question.toLowerCase().includes(k)));
+
+        log.info({ initial: response.data.length, filtered: snapshots.length }, '🎯 Strategy filtering complete');
 
         // ── PERSIST: Upsert markets to database ──
-        // This ensures foreign keys like AiDecision and Trade can link to a valid Market record.
-        const db = getDatabase();
         for (const m of snapshots) {
             await db.market.upsert({
                 where: { conditionId: m.conditionId },
@@ -818,6 +1001,7 @@ async function getPortfolioState(): Promise<PortfolioState> {
 
     return {
         totalCapital: portfolio?.totalCapital || (isPaperTrading ? 1000 : 10000),
+        initialCapital: portfolio?.initialCapital || (isPaperTrading ? 1000 : 10000),
         availableCapital: portfolio?.availableCapital || (isPaperTrading ? 1000 : 10000),
         deployedCapital: portfolio?.deployedCapital || 0,
         totalPnl: portfolio?.totalPnl || 0,
@@ -1037,13 +1221,62 @@ async function main(): Promise<void> {
         res.json(paperPortfolio);
     });
 
-    // ── Schedule trading cycle (every 1 minute) ──
-    cron.schedule('*/1 * * * *', () => {
-        log.info('⏰ Scheduled trading cycle triggered');
-        runTradingCycle().catch((err) =>
-            log.error({ error: err.message }, 'Scheduled trading cycle failed')
-        );
+    app.post('/paper-portfolio/reset', auth, async (req, res) => {
+        try {
+            const { amount } = req.body;
+            if (!amount || isNaN(amount) || amount <= 0) {
+                return res.status(400).json({ error: 'Invalid amount' });
+            }
+            await resetPaperPortfolio(Number(amount));
+            res.json({ success: true, portfolio: paperPortfolio });
+        } catch (error) {
+            res.status(500).json({ error: (error as Error).message });
+        }
     });
+
+    app.get('/status', auth, async (req, res) => {
+        const config = await getDatabase().budgetConfig.findFirst();
+        res.json({
+            isTradingActive,
+            isPaperTrading,
+            schedule: (config as any)?.cronSchedule || '*/5 * * * *',
+            agents: agents.map(a => a.name)
+        });
+    });
+
+    app.post('/schedule', auth, async (req, res) => {
+        try {
+            const { schedule } = req.body;
+            if (!schedule || !cron.validate(schedule)) {
+                return res.status(400).json({ error: 'Invalid cron schedule' });
+            }
+
+            const db = getDatabase();
+            const existing = await db.budgetConfig.findFirst();
+
+            if (existing) {
+                await db.budgetConfig.update({
+                    where: { id: existing.id },
+                    data: { cronSchedule: schedule } as any
+                });
+            } else {
+                await db.budgetConfig.create({
+                    data: { cronSchedule: schedule } as any
+                });
+            }
+
+            scheduleTradingJob(schedule);
+            res.json({ success: true, schedule });
+        } catch (error) {
+            res.status(500).json({ error: (error as Error).message });
+        }
+    });
+
+
+    // ── Schedule trading cycle ──
+    const initialConfig = await getDatabase().budgetConfig.findFirst();
+    const initialSchedule = (initialConfig as any)?.cronSchedule || '*/5 * * * *';
+    scheduleTradingJob(initialSchedule);
 
     // ── Schedule Post-Mortem Analysis (Every Hour) ──
     cron.schedule('0 * * * *', () => {
