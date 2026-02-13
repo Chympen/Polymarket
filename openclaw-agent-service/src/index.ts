@@ -195,6 +195,22 @@ async function initializeServices() {
             }
 
             log.info('✅ Paper portfolio state loaded from database');
+        } else {
+            log.info('📝 Initializing new Paper Portfolio in database ($1,000,000)...');
+            const newPortfolio = await db.portfolio.create({
+                data: {
+                    totalCapital: 1000000,
+                    availableCapital: 1000000,
+                    deployedCapital: 0,
+                    totalPnl: 0,
+                    isPaper: true,
+                    snapshotDate: new Date(),
+                    highWaterMark: 1000000,
+                }
+            });
+            paperPortfolio.availableCapital = newPortfolio.availableCapital;
+            paperPortfolio.totalCapital = newPortfolio.totalCapital;
+            log.info('✅ Paper portfolio initialized');
         }
 
         const openPaperPositions = await db.position.findMany({

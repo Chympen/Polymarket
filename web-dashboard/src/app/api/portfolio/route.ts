@@ -47,7 +47,7 @@ export async function GET() {
             positionsList = modePositions;
             walletInfo = {
                 polBalance: "0",
-                usdcBalance: (displayPortfolio.availableCapital * 1000000).toString(),
+                usdcBalance: ((displayPortfolio?.availableCapital || 0) * 1000000).toString(),
                 nativeUsdcBalance: "0"
             };
         } else {
