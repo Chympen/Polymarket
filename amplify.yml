@@ -1,20 +1,20 @@
 version: 1
 applications:
-  - appRoot: .
+  - appRoot: web-dashboard
     frontend:
       phases:
         preBuild:
           commands:
             - npm ci
-            - npm run generate --workspace=shared-lib
+            - npm run generate --workspace=shared-lib --prefix ..
         build:
           commands:
-            - npm run build --workspace=web-dashboard
+            - npm run build --workspace=web-dashboard --prefix ..
       artifacts:
-        baseDirectory: web-dashboard/.next
+        baseDirectory: .next
         files:
           - '**/*'
       cache:
         paths:
-          - node_modules/**/*
-          - web-dashboard/.next/cache/**/*
+          - ../node_modules/**/*
+          - .next/cache/**/*
